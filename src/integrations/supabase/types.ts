@@ -14,6 +14,54 @@ export type Database = {
   }
   public: {
     Tables: {
+      orders: {
+        Row: {
+          address: string
+          amount: number
+          created_at: string
+          custom_time: string | null
+          first_name: string
+          id: string
+          last_name: string | null
+          size_option: string
+          status: string
+          time_option: string
+          updated_at: string
+          user_id: number
+          username: string | null
+        }
+        Insert: {
+          address: string
+          amount: number
+          created_at?: string
+          custom_time?: string | null
+          first_name: string
+          id?: string
+          last_name?: string | null
+          size_option: string
+          status?: string
+          time_option: string
+          updated_at?: string
+          user_id: number
+          username?: string | null
+        }
+        Update: {
+          address?: string
+          amount?: number
+          created_at?: string
+          custom_time?: string | null
+          first_name?: string
+          id?: string
+          last_name?: string | null
+          size_option?: string
+          status?: string
+          time_option?: string
+          updated_at?: string
+          user_id?: number
+          username?: string | null
+        }
+        Relationships: []
+      }
       SQL: {
         Row: {
           created_at: string
@@ -26,6 +74,30 @@ export type Database = {
         Update: {
           created_at?: string
           id?: number
+        }
+        Relationships: []
+      }
+      tg_user_state: {
+        Row: {
+          created_at: string
+          data: Json | null
+          state: string
+          updated_at: string
+          user_id: number
+        }
+        Insert: {
+          created_at?: string
+          data?: Json | null
+          state?: string
+          updated_at?: string
+          user_id: number
+        }
+        Update: {
+          created_at?: string
+          data?: Json | null
+          state?: string
+          updated_at?: string
+          user_id?: number
         }
         Relationships: []
       }

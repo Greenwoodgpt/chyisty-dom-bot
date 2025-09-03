@@ -429,7 +429,7 @@ serve(async (req) => {
       } else if (message.text) {
         await handleTextMessage(message);
       }
-    } else if (update.callback_query) {
+    } else if (update && update.callback_query) {
       await handleCallbackQuery(update.callback_query);
     }
     

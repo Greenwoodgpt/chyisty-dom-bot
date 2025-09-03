@@ -407,11 +407,16 @@ async function handleTextMessage(message: TelegramMessage) {
 }
 
 serve(async (req) => {
+  // Health check + CORS preflight
   if (req.method === 'OPTIONS') {
+    return new Response('ok', { headers: corsHeaders });
+  }
+  if (req.method === 'GET') {
     return new Response('ok', { headers: corsHeaders });
   }
 
   try {
+    console.log('telegram-webhook request received', { method: req.method });
     const update: TelegramUpdate = await req.json();
     
     if (update.message) {

@@ -61,7 +61,13 @@ async function sendMessage(chatId: number, text: string, replyMarkup?: any) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ chat_id: chatId, text, reply_markup: replyMarkup, parse_mode: 'HTML' })
   });
-  return response.json();
+  const bodyText = await response.text();
+  if (!response.ok) {
+    console.error('sendMessage failed', { status: response.status, body: bodyText });
+  } else {
+    console.log('sendMessage ok', { status: response.status });
+  }
+  try { return JSON.parse(bodyText); } catch { return { raw: bodyText }; }
 }
 
 async function answerCallbackQuery(callbackQueryId: string, text?: string) {

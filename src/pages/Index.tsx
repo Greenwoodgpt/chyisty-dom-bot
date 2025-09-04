@@ -1,9 +1,10 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Truck, Package, Clock, MapPin, Users, BarChart3 } from "lucide-react";
+import { Truck, Package, Clock, MapPin, Users, BarChart3, Eye, TrendingUp } from "lucide-react";
 
 interface Order {
   id: string;
@@ -21,6 +22,7 @@ interface Order {
 }
 
 const Index = () => {
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
@@ -128,11 +130,22 @@ const Index = () => {
     <div className="min-h-screen bg-background p-4">
       <div className="container mx-auto">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold mb-2 flex items-center gap-2">
-            <Truck className="h-8 w-8 text-primary" />
-            CRM - Вывоз мусора
-          </h1>
-          <p className="text-muted-foreground">Панель управления заказами</p>
+          <div className="flex justify-between items-center mb-4">
+            <div>
+              <h1 className="text-3xl font-bold mb-2 flex items-center gap-2">
+                <Truck className="h-8 w-8 text-primary" />
+                CRM - Вывоз мусора
+              </h1>
+              <p className="text-muted-foreground">Панель управления заказами</p>
+            </div>
+            <Button 
+              onClick={() => navigate('/analytics')}
+              className="flex items-center gap-2"
+            >
+              <TrendingUp className="h-4 w-4" />
+              Аналитика
+            </Button>
+          </div>
         </div>
 
         {/* Статистика */}
@@ -244,32 +257,44 @@ const Index = () => {
                     </div>
                   </div>
                   
-                  {order.status === 'new' && (
-                    <div className="flex gap-2">
-                      <Button 
-                        size="sm" 
-                        variant="outline"
-                        onClick={() => updateOrderStatus(order.id, 'in_work')}
-                      >
-                        В работу
-                      </Button>
+                  <div className="flex gap-2 flex-wrap">
+                    <Button 
+                      size="sm" 
+                      variant="outline"
+                      onClick={() => navigate(`/order/${order.id}`)}
+                      className="flex items-center gap-1"
+                    >
+                      <Eye className="h-3 w-3" />
+                      Подробнее
+                    </Button>
+                    
+                    {order.status === 'new' && (
+                      <>
+                        <Button 
+                          size="sm" 
+                          variant="outline"
+                          onClick={() => updateOrderStatus(order.id, 'in_work')}
+                        >
+                          В работу
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          onClick={() => updateOrderStatus(order.id, 'completed')}
+                        >
+                          Завершить
+                        </Button>
+                      </>
+                    )}
+                    
+                    {order.status === 'in_work' && (
                       <Button 
                         size="sm" 
                         onClick={() => updateOrderStatus(order.id, 'completed')}
                       >
                         Завершить
                       </Button>
-                    </div>
-                  )}
-                  
-                  {order.status === 'in_work' && (
-                    <Button 
-                      size="sm" 
-                      onClick={() => updateOrderStatus(order.id, 'completed')}
-                    >
-                      Завершить
-                    </Button>
-                  )}
+                    )}
+                  </div>
                 </CardContent>
               </Card>
             ))

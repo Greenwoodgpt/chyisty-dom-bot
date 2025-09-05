@@ -18,6 +18,8 @@ export type Database = {
         Row: {
           address: string
           amount: number
+          bags: Json | null
+          comment: string | null
           created_at: string
           custom_time: string | null
           first_name: string
@@ -33,6 +35,8 @@ export type Database = {
         Insert: {
           address: string
           amount: number
+          bags?: Json | null
+          comment?: string | null
           created_at?: string
           custom_time?: string | null
           first_name: string
@@ -48,6 +52,8 @@ export type Database = {
         Update: {
           address?: string
           amount?: number
+          bags?: Json | null
+          comment?: string | null
           created_at?: string
           custom_time?: string | null
           first_name?: string
@@ -74,6 +80,33 @@ export type Database = {
         Update: {
           created_at?: string
           id?: number
+        }
+        Relationships: []
+      }
+      tg_user_profile: {
+        Row: {
+          created_at: string
+          eco_points: number
+          role: string | null
+          saved_address: string | null
+          updated_at: string
+          user_id: number
+        }
+        Insert: {
+          created_at?: string
+          eco_points?: number
+          role?: string | null
+          saved_address?: string | null
+          updated_at?: string
+          user_id: number
+        }
+        Update: {
+          created_at?: string
+          eco_points?: number
+          role?: string | null
+          saved_address?: string | null
+          updated_at?: string
+          user_id?: number
         }
         Relationships: []
       }

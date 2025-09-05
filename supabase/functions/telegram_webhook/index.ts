@@ -107,6 +107,90 @@ function getMainMenuKeyboard() {
   ]};
 }
 
+// Универсальная строка «Назад / В начало»
+function getBackHomeRow() {
+  return [{ text: '⬅️ Назад', callback_data: 'go_back' }, { text: '🏠 В начало', callback_data: 'go_home' }];
+}
+
+function getRoleKeyboard() {
+  return { inline_keyboard: [
+    [{ text: '🛒 Я заказчик', callback_data: 'role_customer' }],
+    [{ text: '🧹 Я исполнитель', callback_data: 'role_performer' }],
+    getBackHomeRow()
+  ]};
+}
+
+function getStartOrderKeyboard() {
+  return { inline_keyboard: [
+    [{ text: '✅ Да, начать', callback_data: 'start_order_yes' }],
+    [{ text: '❌ Нет, позже', callback_data: 'start_order_no' }],
+    getBackHomeRow()
+  ]};
+}
+
+function getSaveAddressKeyboard() {
+  return { inline_keyboard: [
+    [{ text: '💾 Сохранить', callback_data: 'save_address_yes' }],
+    [{ text: '⛔ Не сохранять', callback_data: 'save_address_no' }],
+    getBackHomeRow()
+  ]};
+}
+
+function getTimeChoiceKeyboard() {
+  return { inline_keyboard: [
+    [{ text: '⚡ Срочно (в течение часа)', callback_data: 'time_choice_urgent' }],
+    [{ text: '🕒 Выбрать время', callback_data: 'time_choice_select' }],
+    getBackHomeRow()
+  ]};
+}
+
+function getTimeSlotsKeyboard() {
+  return { inline_keyboard: [
+    [{ text: 'Через 1 час', callback_data: 'slot_1h' }],
+    [{ text: 'Сегодня 18:00–20:00', callback_data: 'slot_today_evening' }],
+    [{ text: 'Завтра 10:00–12:00', callback_data: 'slot_tomorrow_morning' }],
+    [{ text: '✍️ Ввести своё время', callback_data: 'time_enter_custom' }],
+    getBackHomeRow()
+  ]};
+}
+
+function getBagCountKeyboard() {
+  return { inline_keyboard: [
+    [{ text: '1 маленький 🥟', callback_data: 'bag_1_small' }],
+    [{ text: '1 средний 🍕', callback_data: 'bag_1_medium' }],
+    [{ text: '1 большой 🎒', callback_data: 'bag_1_large' }],
+    [{ text: '2 пакета ➕', callback_data: 'bag_2' }],
+    [{ text: '3 пакета ➕', callback_data: 'bag_3' }],
+    getBackHomeRow()
+  ]};
+}
+
+function getBagSizeKeyboard(idx: number) {
+  return { inline_keyboard: [
+    [{ text: `Пакет ${idx}: маленький 🥟`, callback_data: 'bag_size_small' }],
+    [{ text: `Пакет ${idx}: средний 🍕`, callback_data: 'bag_size_medium' }],
+    [{ text: `Пакет ${idx}: большой 🎒`, callback_data: 'bag_size_large' }],
+    getBackHomeRow()
+  ]};
+}
+
+function getPaymentKeyboard(amountSet: boolean) {
+  const rows: any[] = [];
+  rows.push([{ text: '💵 Минимальная сумма (100₽)', callback_data: 'payment_min' }]);
+  rows.push([{ text: '✍️ Ввести свою сумму', callback_data: 'payment_custom' }]);
+  if (amountSet) rows.push([{ text: '✅ Оплатить', callback_data: 'pay_now' }]);
+  rows.push(getBackHomeRow());
+  return { inline_keyboard: rows };
+}
+
+function getCommentChoiceKeyboard() {
+  return { inline_keyboard: [
+    [{ text: '📝 Да, добавить', callback_data: 'comment_yes' }],
+    [{ text: '⛔ Нет', callback_data: 'comment_no' }],
+    getBackHomeRow()
+  ]};
+}
+
 function getSizeKeyboard() {
   return { inline_keyboard: [
     [{ text: 'Один пакет (до 6 кг) - 100₽', callback_data: 'size_one_bag' }],
@@ -133,19 +217,10 @@ function getConfirmationKeyboard() {
 }
 
 async function handleStart(message: TelegramMessage) {
-  await updateUserState(message.from.id, 'start');
-  const welcomeText = `
-🗑️ <b>Добро пожаловать в сервис вывоза мусора!</b>
-
-Мы поможем вам быстро и удобно заказать вывоз мусора.
-
-<b>Наши тарифы:</b>
-• Один пакет (до 6 кг) - 100₽
-• Два пакета - 200₽
-• Три пакета - 300₽
-
-Выберите действие:`;
-  await sendMessage(message.chat.id, welcomeText, getMainMenuKeyboard());
+  // Первый запуск: определяем роль пользователя
+  await updateUserState(message.from.id, 'awaiting_role', { bags: [], bag_count: 0 });
+  const text = '👋 Привет! Я — <b>Мусоробот</b> 🤖\n\nКто вы? Выберите роль ниже:';
+  await sendMessage(message.chat.id, text, getRoleKeyboard());
 }
 
 async function handleHelp(message: TelegramMessage) {
@@ -169,8 +244,23 @@ async function handleHelp(message: TelegramMessage) {
   await sendMessage(message.chat.id, helpText, getMainMenuKeyboard());
 }
 
-async function saveOrder(userId: number, chatId: number, user: TelegramUser, tempData: any) {
-  const sizeMap: { [key: string]: number } = { 'one_bag': 100, 'two_bags': 200, 'three_bags': 300 };
+async function saveOrder(userId: number, chatId: number, user: TelegramUser, tempData: any, status: string = 'new') {
+  // Определяем size_option по количеству пакетов (для совместимости с веб-CRM)
+  const count = (tempData.bags?.length ?? 0) || (tempData.size ? (tempData.size === 'one_bag' ? 1 : tempData.size === 'two_bags' ? 2 : 3) : 1);
+  const size_option = count === 1 ? 'one_bag' : count === 2 ? 'two_bags' : 'three_bags';
+
+  // Время
+  let time_option = 'custom';
+  let custom_time: string | null = null;
+  if (tempData.time === 'within_hour' || tempData.time_option === 'within_hour') {
+    time_option = 'within_hour';
+  }
+  custom_time = tempData.time_text || tempData.custom_time || null;
+
+  // Сумма (в копейках)
+  const amountRub = typeof tempData.amount === 'number' ? tempData.amount : (size_option === 'one_bag' ? 100 : size_option === 'two_bags' ? 200 : 300);
+  const amount = Math.max(100, Math.round(amountRub)) * 100;
+
   const order = {
     user_id: userId,
     chat_id: chatId,
@@ -178,12 +268,15 @@ async function saveOrder(userId: number, chatId: number, user: TelegramUser, tem
     first_name: user.first_name,
     last_name: user.last_name || null,
     address: tempData.address,
-    size_option: tempData.size,
-    time_option: tempData.time,
-    custom_time: tempData.custom_time || null,
-    amount: sizeMap[tempData.size] * 100,
-    status: 'new'
+    size_option,
+    time_option,
+    custom_time,
+    amount,
+    status,
+    comment: tempData.comment || null,
+    bags: Array.isArray(tempData.bags) ? tempData.bags : null,
   };
+
   const { data, error } = await supabase.from('orders').insert(order).select().single();
   if (error) { console.error('Error saving order:', error); return null; }
   return data;
@@ -191,16 +284,20 @@ async function saveOrder(userId: number, chatId: number, user: TelegramUser, tem
 
 async function notifyAdmin(order: any) {
   const sizeNames: { [key: string]: string } = { 'one_bag': 'Один пакет (до 6 кг)', 'two_bags': 'Два пакета', 'three_bags': 'Три пакета' };
-  const timeNames: { [key: string]: string } = { 'within_hour': 'В течение часа', 'tomorrow_morning': 'Завтра утром', 'custom': 'Указанное время' };
+  const timeNames: { [key: string]: string } = { 'within_hour': 'В течение часа', 'custom': 'Указанное время' };
+  const bagsText = order.bags ? `\n🛍️ Пакеты: ${order.bags.join(', ')}` : '';
+  const commentText = order.comment ? `\n💬 Комментарий: ${order.comment}` : '';
   const adminText = `
 🔔 <b>НОВЫЙ ЗАКАЗ #${order.id.slice(-8)}</b>
 
 👤 <b>Клиент:</b> ${order.first_name} ${order.last_name || ''}
 📱 <b>Username:</b> ${order.username ? '@' + order.username : 'не указан'}
 📍 <b>Адрес:</b> ${order.address}
-📦 <b>Объем:</b> ${sizeNames[order.size_option]}
+📦 <b>Объем:</b> ${sizeNames[order.size_option]}${bagsText}
 ⏰ <b>Время:</b> ${timeNames[order.time_option]}${order.custom_time ? ' (' + order.custom_time + ')' : ''}
 💰 <b>Сумма:</b> ${order.amount / 100}₽
+🏷️ <b>Статус:</b> ${order.status}
+${commentText}
 
 📅 <b>Дата заказа:</b> ${new Date(order.created_at).toLocaleString('ru-RU')}`;
   await sendMessage(parseInt(TELEGRAM_ADMIN_CHAT_ID), adminText);
@@ -212,53 +309,186 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
   const data = callbackQuery.data!;
   await answerCallbackQuery(callbackQuery.id);
   const userState = await getUserState(userId);
+  const temp = { ...(userState.temp_data || {}) };
+
+  // Вспомогательные функции-подсказки
+  const showRole = async () => {
+    await updateUserState(userId, 'awaiting_role', { bags: [], bag_count: 0 });
+    await sendMessage(chatId, 'Кто вы? Выберите роль ниже:', getRoleKeyboard());
+  };
+  const showGreeting = async () => {
+    await updateUserState(userId, 'customer_greeting', temp);
+    await sendMessage(chatId, '👋 Привет! Я — Мусоробот 🤖. Готов помочь вам цивилизованно избавиться от мусора. Начнём заказ?', getStartOrderKeyboard());
+  };
+  const showAskAddress = async () => {
+    await updateUserState(userId, 'awaiting_address', temp);
+    await sendMessage(chatId, '📍 Уточните адрес, пожалуйста.', { inline_keyboard: [getBackHomeRow()] });
+  };
+  const showSaveAddress = async () => {
+    await updateUserState(userId, 'ask_save_address', temp);
+    await sendMessage(chatId, 'Отлично, адрес записан ✅. Сохранить его для будущих заказов?', getSaveAddressKeyboard());
+  };
+  const showTimeChoice = async () => {
+    await updateUserState(userId, 'awaiting_time_choice', temp);
+    await sendMessage(chatId, '⏰ Когда вынести мусор?', getTimeChoiceKeyboard());
+  };
+  const showTimeSlots = async () => {
+    await updateUserState(userId, 'awaiting_time_slot', temp);
+    await sendMessage(chatId, 'Выберите удобный интервал или введите своё время:', getTimeSlotsKeyboard());
+  };
+  const showBagSelection = async () => {
+    await updateUserState(userId, 'awaiting_bag_selection', temp);
+    await sendMessage(chatId, '🛍️ Сколько и какие пакеты нужно вынести?', getBagCountKeyboard());
+  };
+  const showNextBagSize = async () => {
+    const nextIdx = (temp.bags?.length || 0) + 1;
+    await updateUserState(userId, 'awaiting_multi_bag_size', temp);
+    await sendMessage(chatId, `Выберите размер для пакета ${nextIdx}:`, getBagSizeKeyboard(nextIdx));
+  };
+  const showPayment = async () => {
+    const amountSet = typeof temp.amount === 'number' && temp.amount >= 100;
+    await updateUserState(userId, 'awaiting_payment', temp);
+    await sendMessage(chatId, '💳 Как оплатим?', getPaymentKeyboard(!!amountSet));
+  };
+  const showCommentChoice = async () => {
+    await updateUserState(userId, 'awaiting_comment_choice', temp);
+    await sendMessage(chatId, '🎁 Хотите оставить комментарий для курьера?', getCommentChoiceKeyboard());
+  };
+
+  // Обработка кнопок
   switch (data) {
+    // Навигация
+    case 'go_home':
+      return await showRole();
+    case 'go_back':
+      switch (userState.state) {
+        case 'customer_greeting': return await showRole();
+        case 'awaiting_address': return await showGreeting();
+        case 'ask_save_address': return await showAskAddress();
+        case 'awaiting_time_choice': return await showSaveAddress();
+        case 'awaiting_time_slot': return await showTimeChoice();
+        case 'awaiting_bag_selection': return await showTimeChoice();
+        case 'awaiting_multi_bag_size': return await showBagSelection();
+        case 'awaiting_payment': return await showBagSelection();
+        case 'awaiting_custom_amount': return await showPayment();
+        case 'awaiting_comment_choice': return await showPayment();
+        case 'awaiting_comment_text': return await showCommentChoice();
+        default: return await showRole();
+      }
+
+    // Выбор роли
+    case 'role_customer':
+      await supabase.from('tg_user_profile').upsert({ user_id: userId, role: 'customer' });
+      return await showGreeting();
+    case 'role_performer':
+      await supabase.from('tg_user_profile').upsert({ user_id: userId, role: 'performer' });
+      await updateUserState(userId, 'start', {});
+      return await sendMessage(chatId, '🧹 Роль исполнителя сохранена. В ближайшее время подключим интерфейс для исполнителей. Спасибо!');
+
+    // Старт заказа (для заказчика)
+    case 'start_order_yes':
+      return await showAskAddress();
+    case 'start_order_no':
+      return await showRole();
+
+    // Старое меню (оставим рабочим)
     case 'new_order':
       await updateUserState(userId, 'awaiting_address', {});
-      await sendMessage(chatId, '📍 Пожалуйста, введите ваш адрес (улица, дом, квартира):');
-      break;
+      return await sendMessage(chatId, '📍 Пожалуйста, введите ваш адрес (улица, дом, квартира):');
     case 'contact_operator':
-      await sendMessage(chatId, '📞 Для связи с оператором напишите нам: @operator_username или позвоните по телефону: +7 (xxx) xxx-xx-xx');
-      break;
+      return await sendMessage(chatId, '📞 Для связи с оператором напишите нам: @operator_username или позвоните по телефону: +7 (xxx) xxx-xx-xx');
     case 'help':
-      await handleHelp(callbackQuery.message!);
-      break;
+      return await handleHelp(callbackQuery.message!);
     case 'cancel':
       await updateUserState(userId, 'start', {});
-      await sendMessage(chatId, '❌ Заказ отменен.', getMainMenuKeyboard());
-      break;
-    case 'size_one_bag':
-    case 'size_two_bags':
-    case 'size_three_bags':
-      const size = data.replace('size_', '');
-      const tempData = { ...userState.temp_data, size };
-      await updateUserState(userId, 'awaiting_time', tempData);
-      await sendMessage(chatId, '⏰ Во сколько забрать мусор?', getTimeKeyboard());
-      break;
-    case 'time_within_hour':
-    case 'time_tomorrow_morning':
-      const time = data.replace('time_', '');
-      const tempDataTime = { ...userState.temp_data, time };
-      await updateUserState(userId, 'awaiting_confirmation', tempDataTime);
-      await showOrderSummary(chatId, tempDataTime);
-      break;
-    case 'time_custom':
-      const tempDataCustom = { ...userState.temp_data, time: 'custom' };
-      await updateUserState(userId, 'awaiting_custom_time', tempDataCustom);
-      await sendMessage(chatId, '📅 Напишите желаемую дату и время (например: "завтра в 14:00" или "28.12 в 10:30"):');
-      break;
-    case 'confirm_order':
-      const order = await saveOrder(userId, chatId, callbackQuery.from, userState.temp_data);
+      return await sendMessage(chatId, '❌ Действие отменено.', getMainMenuKeyboard());
+
+    // Сохранение адреса
+    case 'save_address_yes':
+      if (temp.address) {
+        await supabase.from('tg_user_profile').upsert({ user_id: userId, saved_address: temp.address });
+      }
+      return await showTimeChoice();
+    case 'save_address_no':
+      return await showTimeChoice();
+
+    // Время вывоза
+    case 'time_choice_urgent':
+      temp.time = 'within_hour';
+      await updateUserState(userId, 'awaiting_bag_selection', temp);
+      return await showBagSelection();
+    case 'time_choice_select':
+      return await showTimeSlots();
+    case 'time_enter_custom':
+      await updateUserState(userId, 'awaiting_custom_time_text', temp);
+      return await sendMessage(chatId, '✍️ Напишите желаемую дату и время (например: «завтра в 14:00»):', { inline_keyboard: [getBackHomeRow()] });
+
+    case 'slot_1h':
+      temp.time_text = 'Через 1 час';
+      return await showBagSelection();
+    case 'slot_today_evening':
+      temp.time_text = 'Сегодня 18:00–20:00';
+      return await showBagSelection();
+    case 'slot_tomorrow_morning':
+      temp.time_text = 'Завтра 10:00–12:00';
+      return await showBagSelection();
+
+    // Количество пакетов (один пакет сразу с размером)
+    case 'bag_1_small':
+      temp.bags = ['small']; temp.bag_count = 1; return await showPayment();
+    case 'bag_1_medium':
+      temp.bags = ['medium']; temp.bag_count = 1; return await showPayment();
+    case 'bag_1_large':
+      temp.bags = ['large']; temp.bag_count = 1; return await showPayment();
+    case 'bag_2':
+      temp.bags = []; temp.bag_count = 2; return await showNextBagSize();
+    case 'bag_3':
+      temp.bags = []; temp.bag_count = 3; return await showNextBagSize();
+
+    // Уточнение размеров для 2-3 пакетов
+    case 'bag_size_small':
+      temp.bags = [...(temp.bags || []), 'small'];
+      if (temp.bags.length < temp.bag_count) return await showNextBagSize();
+      return await showPayment();
+    case 'bag_size_medium':
+      temp.bags = [...(temp.bags || []), 'medium'];
+      if (temp.bags.length < temp.bag_count) return await showNextBagSize();
+      return await showPayment();
+    case 'bag_size_large':
+      temp.bags = [...(temp.bags || []), 'large'];
+      if (temp.bags.length < temp.bag_count) return await showNextBagSize();
+      return await showPayment();
+
+    // Оплата
+    case 'payment_min':
+      temp.amount = 100; await updateUserState(userId, 'awaiting_payment', temp);
+      return await sendMessage(chatId, 'Сумма установлена: 100₽', getPaymentKeyboard(true));
+    case 'payment_custom':
+      await updateUserState(userId, 'awaiting_custom_amount', temp);
+      return await sendMessage(chatId, 'Введите желаемую сумму в рублях (не меньше 100):', { inline_keyboard: [getBackHomeRow()] });
+    case 'pay_now': {
+      const order = await saveOrder(userId, chatId, callbackQuery.from, temp, 'оплачено');
       if (order) {
-        await updateUserState(userId, 'start', {});
-        await sendMessage(chatId, `✅ Заказ принят! Номер заказа: #${order.id.slice(-8)}\n\nМы свяжемся с вами в ближайшее время.`, getMainMenuKeyboard());
+        temp.order_id = order.id;
+        await updateUserState(userId, 'awaiting_comment_choice', temp);
+        await sendMessage(chatId, '✅ Ваш заказ оплачен и принят! Хотите добавить комментарий для курьера?', getCommentChoiceKeyboard());
         await notifyAdmin(order);
       } else {
-        await sendMessage(chatId, '❌ Произошла ошибка при создании заказа. Попробуйте еще раз.', getMainMenuKeyboard());
+        await sendMessage(chatId, '❌ Произошла ошибка при создании заказа. Попробуйте еще раз.');
       }
-      break;
+      return;
+    }
+
+    // Комментарий
+    case 'comment_yes':
+      await updateUserState(userId, 'awaiting_comment_text', temp);
+      return await sendMessage(chatId, 'Напишите комментарий (например: «Забрать с порога», «Позвонить в домофон»):', { inline_keyboard: [getBackHomeRow()] });
+    case 'comment_no':
+      await updateUserState(userId, 'start', {});
+      return await sendMessage(chatId, '✅ Ваш заказ принят! Курьер скоро приедет и аккуратно вынесет ваш мусор. Спасибо, что выбираете Мусоробота 🤖✨\n\nВы можете оформить 🏠 Новый заказ командой /start.');
   }
 }
+
 
 async function showOrderSummary(chatId: number, tempData: any) {
   const sizeNames: { [key: string]: string } = { 'one_bag': 'Один пакет (до 6 кг)', 'two_bags': 'Два пакета', 'three_bags': 'Три пакета' };
@@ -277,24 +507,57 @@ async function showOrderSummary(chatId: number, tempData: any) {
 async function handleTextMessage(message: TelegramMessage) {
   const userId = message.from.id;
   const chatId = message.chat.id;
-  const text = message.text!;
+  const text = message.text?.trim() || '';
   const userState = await getUserState(userId);
+  const temp = { ...(userState.temp_data || {}) };
+
   switch (userState.state) {
     case 'awaiting_address':
-      if (text.length < 10) { await sendMessage(chatId, '❌ Адрес слишком короткий. Пожалуйста, укажите полный адрес (улица, дом, квартира):'); return; }
-      const tempData = { address: text };
-      await updateUserState(userId, 'awaiting_size', tempData);
-      await sendMessage(chatId, '📦 Выберите, сколько мусора нужно вынести:', getSizeKeyboard());
-      break;
-    case 'awaiting_custom_time':
-      const tempDataCustomTime = { ...userState.temp_data, custom_time: text };
+      if (text.length < 5) { await sendMessage(chatId, '❌ Адрес слишком короткий. Введите полный адрес.', { inline_keyboard: [getBackHomeRow()] }); return; }
+      temp.address = text;
+      await updateUserState(userId, 'ask_save_address', temp);
+      await sendMessage(chatId, 'Отлично, адрес записан ✅. Сохранить его для будущих заказов?', getSaveAddressKeyboard());
+      return;
+
+    case 'awaiting_custom_time_text':
+      temp.time_text = text;
+      await updateUserState(userId, 'awaiting_bag_selection', temp);
+      await sendMessage(chatId, '🛍️ Сколько и какие пакеты нужно вынести?', getBagCountKeyboard());
+      return;
+
+    case 'awaiting_custom_amount': {
+      const amount = parseInt(text.replace(/\D/g, ''));
+      if (!amount || amount < 100) {
+        await sendMessage(chatId, '❌ Укажите корректную сумму (не меньше 100₽).', { inline_keyboard: [getBackHomeRow()] });
+        return;
+      }
+      temp.amount = amount;
+      await updateUserState(userId, 'awaiting_payment', temp);
+      await sendMessage(chatId, `Сумма установлена: ${amount}₽`, getPaymentKeyboard(true));
+      return;
+    }
+
+    case 'awaiting_comment_text': {
+      if (!temp.order_id) {
+        await sendMessage(chatId, '⚠️ Не найден активный заказ. Начните заново: /start');
+        await updateUserState(userId, 'start', {});
+        return;
+      }
+      await supabase.from('orders').update({ comment: text }).eq('id', temp.order_id);
+      await updateUserState(userId, 'start', {});
+      await sendMessage(chatId, '✅ Комментарий добавлен!\n\nВаш заказ принят! Курьер скоро приедет и аккуратно вынесет ваш мусор. Спасибо, что выбираете Мусоробота 🤖✨');
+      return;
+    }
+
+    case 'awaiting_custom_time': // совместимость со старым сценарием
+      const tempDataCustomTime = { ...temp, custom_time: text };
       await updateUserState(userId, 'awaiting_confirmation', tempDataCustomTime);
       await showOrderSummary(chatId, tempDataCustomTime);
-      break;
-    case 'start':
+      return;
+
     default:
       await sendMessage(chatId, 'Выберите действие из меню:', getMainMenuKeyboard());
-      break;
+      return;
   }
 }
 

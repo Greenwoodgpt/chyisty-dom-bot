@@ -43,7 +43,7 @@ interface TelegramChat {
 interface UserState {
   user_id: number;
   state: string;
-  temp_data: any;
+  data: any;
 }
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')!;
@@ -86,7 +86,7 @@ async function getUserState(userId: number): Promise<UserState> {
     .single();
 
   if (error || !data) {
-    const newState: UserState = { user_id: userId, state: 'start', temp_data: {} };
+    const newState: UserState = { user_id: userId, state: 'start', data: {} };
     await supabase.from('tg_user_state').upsert(newState);
     return newState;
   }
@@ -95,7 +95,7 @@ async function getUserState(userId: number): Promise<UserState> {
 
 async function updateUserState(userId: number, state: string, tempData?: any) {
   const updateData: any = { user_id: userId, state, updated_at: new Date().toISOString() };
-  if (tempData !== undefined) updateData.temp_data = tempData;
+  if (tempData !== undefined) updateData.data = tempData;
   await supabase.from('tg_user_state').upsert(updateData);
 }
 
@@ -263,7 +263,6 @@ async function saveOrder(userId: number, chatId: number, user: TelegramUser, tem
 
   const order = {
     user_id: userId,
-    chat_id: chatId,
     username: user.username || null,
     first_name: user.first_name,
     last_name: user.last_name || null,
@@ -309,7 +308,7 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
   const data = callbackQuery.data!;
   await answerCallbackQuery(callbackQuery.id);
   const userState = await getUserState(userId);
-  const temp = { ...(userState.temp_data || {}) };
+  const temp = { ...(userState.data || {}) };
 
   // Вспомогательные функции-подсказки
   const showRole = async () => {
@@ -509,7 +508,7 @@ async function handleTextMessage(message: TelegramMessage) {
   const chatId = message.chat.id;
   const text = message.text?.trim() || '';
   const userState = await getUserState(userId);
-  const temp = { ...(userState.temp_data || {}) };
+  const temp = { ...(userState.data || {}) };
 
   switch (userState.state) {
     case 'awaiting_address':

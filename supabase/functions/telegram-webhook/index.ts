@@ -43,7 +43,7 @@ interface TelegramChat {
 interface UserState {
   user_id: number;
   state: string;
-  temp_data: any;
+  data: any;
 }
 
 const TELEGRAM_BOT_TOKEN = Deno.env.get('TELEGRAM_BOT_TOKEN')!;
@@ -95,7 +95,7 @@ async function getUserState(userId: number): Promise<UserState> {
     const newState: UserState = {
       user_id: userId,
       state: 'start',
-      temp_data: {}
+      data: {}
     };
     
     await supabase
@@ -117,7 +117,7 @@ async function updateUserState(userId: number, state: string, tempData?: any) {
   };
   
   if (tempData !== undefined) {
-    updateData.temp_data = tempData;
+    updateData.data = tempData;
   }
   
   await supabase
@@ -222,7 +222,6 @@ async function saveOrder(userId: number, chatId: number, user: TelegramUser, tem
 
   const order = {
     user_id: userId,
-    chat_id: chatId,
     username: user.username || null,
     first_name: user.first_name,
     last_name: user.last_name || null,
@@ -310,7 +309,7 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
     case 'size_two_bags':
     case 'size_three_bags':
       const size = data.replace('size_', '');
-      const tempData = { ...userState.temp_data, size };
+      const tempData = { ...userState.data, size };
       await updateUserState(userId, 'awaiting_time', tempData);
       await sendMessage(chatId, '⏰ Во сколько забрать мусор?', getTimeKeyboard());
       break;
@@ -318,19 +317,19 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
     case 'time_within_hour':
     case 'time_tomorrow_morning':
       const time = data.replace('time_', '');
-      const tempDataTime = { ...userState.temp_data, time };
+      const tempDataTime = { ...userState.data, time };
       await updateUserState(userId, 'awaiting_confirmation', tempDataTime);
       await showOrderSummary(chatId, tempDataTime);
       break;
       
     case 'time_custom':
-      const tempDataCustom = { ...userState.temp_data, time: 'custom' };
+      const tempDataCustom = { ...userState.data, time: 'custom' };
       await updateUserState(userId, 'awaiting_custom_time', tempDataCustom);
       await sendMessage(chatId, '📅 Напишите желаемую дату и время (например: "завтра в 14:00" или "28.12 в 10:30"):');
       break;
       
     case 'confirm_order':
-      const order = await saveOrder(userId, chatId, callbackQuery.from, userState.temp_data);
+      const order = await saveOrder(userId, chatId, callbackQuery.from, userState.data);
       if (order) {
         await updateUserState(userId, 'start', {});
         await sendMessage(chatId, `✅ Заказ принят! Номер заказа: #${order.id.slice(-8)}\n\nМы свяжемся с вами в ближайшее время.`, getMainMenuKeyboard());
@@ -394,7 +393,7 @@ async function handleTextMessage(message: TelegramMessage) {
       break;
       
     case 'awaiting_custom_time':
-      const tempDataCustomTime = { ...userState.temp_data, custom_time: text };
+      const tempDataCustomTime = { ...userState.data, custom_time: text };
       await updateUserState(userId, 'awaiting_confirmation', tempDataCustomTime);
       await showOrderSummary(chatId, tempDataCustomTime);
       break;

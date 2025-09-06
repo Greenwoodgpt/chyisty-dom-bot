@@ -466,7 +466,7 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
       await updateUserState(userId, 'awaiting_custom_amount', temp);
       return await sendMessage(chatId, 'Введите желаемую сумму в рублях (не меньше 100):', { inline_keyboard: [getBackHomeRow()] });
     case 'pay_now': {
-      const order = await saveOrder(userId, chatId, callbackQuery.from, temp, 'оплачено');
+      const order = await saveOrder(userId, chatId, callbackQuery.from, temp, 'new');
       if (order) {
         temp.order_id = order.id;
         await updateUserState(userId, 'awaiting_comment_choice', temp);

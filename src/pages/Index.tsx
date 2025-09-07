@@ -138,13 +138,23 @@ const Index = () => {
               </h1>
               <p className="text-muted-foreground">Панель управления заказами</p>
             </div>
-            <Button 
-              onClick={() => navigate('/analytics')}
-              className="flex items-center gap-2"
-            >
-              <TrendingUp className="h-4 w-4" />
-              Аналитика
-            </Button>
+            <div className="flex gap-2">
+              <Button 
+                onClick={() => navigate('/provider')}
+                variant="outline"
+                className="flex items-center gap-2"
+              >
+                <Truck className="h-4 w-4" />
+                Исполнитель
+              </Button>
+              <Button 
+                onClick={() => navigate('/analytics')}
+                className="flex items-center gap-2"
+              >
+                <TrendingUp className="h-4 w-4" />
+                Аналитика
+              </Button>
+            </div>
           </div>
         </div>
 

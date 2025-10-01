@@ -319,9 +319,13 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
     await updateUserState(userId, 'customer_greeting', temp);
     await sendMessage(chatId, '👋 Привет! Я — Мусоробот 🤖. Готов помочь вам цивилизованно избавиться от мусора. Начнём заказ?', getStartOrderKeyboard());
   };
+  const showAskCity = async () => {
+    await updateUserState(userId, 'awaiting_city', temp);
+    await sendMessage(chatId, '🏙️ Укажите ваш город, пожалуйста.', { inline_keyboard: [getBackHomeRow()] });
+  };
   const showAskAddress = async () => {
     await updateUserState(userId, 'awaiting_address', temp);
-    await sendMessage(chatId, '📍 Уточните адрес, пожалуйста.', { inline_keyboard: [getBackHomeRow()] });
+    await sendMessage(chatId, '📍 Уточните адрес, пожалуйста (улица, дом, квартира).', { inline_keyboard: [getBackHomeRow()] });
   };
   const showSaveAddress = async () => {
     await updateUserState(userId, 'ask_save_address', temp);
@@ -362,7 +366,8 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
     case 'go_back':
       switch (userState.state) {
         case 'customer_greeting': return await showRole();
-        case 'awaiting_address': return await showGreeting();
+        case 'awaiting_city': return await showGreeting();
+        case 'awaiting_address': return await showAskCity();
         case 'ask_save_address': return await showAskAddress();
         case 'awaiting_time_choice': return await showSaveAddress();
         case 'awaiting_time_slot': return await showTimeChoice();
@@ -386,7 +391,7 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
 
     // Старт заказа (для заказчика)
     case 'start_order_yes':
-      return await showAskAddress();
+      return await showAskCity();
     case 'start_order_no':
       return await showRole();
 
@@ -511,6 +516,13 @@ async function handleTextMessage(message: TelegramMessage) {
   const temp = { ...(userState.data || {}) };
 
   switch (userState.state) {
+    case 'awaiting_city':
+      if (text.length < 2) { await sendMessage(chatId, '❌ Название города слишком короткое.', { inline_keyboard: [getBackHomeRow()] }); return; }
+      temp.city = text;
+      await updateUserState(userId, 'awaiting_address', temp);
+      await sendMessage(chatId, '📍 Уточните адрес, пожалуйста (улица, дом, квартира).', { inline_keyboard: [getBackHomeRow()] });
+      return;
+
     case 'awaiting_address':
       if (text.length < 5) { await sendMessage(chatId, '❌ Адрес слишком короткий. Введите полный адрес.', { inline_keyboard: [getBackHomeRow()] }); return; }
       temp.address = text;

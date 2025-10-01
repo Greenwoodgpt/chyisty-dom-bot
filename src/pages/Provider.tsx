@@ -126,11 +126,11 @@ const Provider = () => {
 
   const renderMainMenu = () => (
     <div className="space-y-6">
-      <div className="text-center space-y-4 bg-gradient-to-r from-primary/10 to-accent/10 rounded-lg p-6">
+      <div className="text-center space-y-4 bg-gradient-to-br from-primary/10 via-accent/5 to-primary/10 rounded-xl p-6 border border-primary/20">
         <h1 className="text-2xl font-bold">Добро пожаловать, герой чистоты! 🦸‍♂️</h1>
         <p className="text-muted-foreground">Готов к новым подвигам по выносу мусора?</p>
         
-        <div className="flex items-center justify-center gap-6 text-sm">
+        <div className="flex items-center justify-center gap-6 text-sm mt-4">
           <div className="flex items-center gap-2">
             <Star className="h-4 w-4 text-yellow-500 fill-current" />
             <span className="font-medium">{stats.rating}</span>
@@ -147,39 +147,39 @@ const Provider = () => {
       </div>
 
       <div className="text-center">
-        <p className="text-lg mb-6">👉 Выбери, что тебе интересно сейчас:</p>
+        <p className="text-lg mb-6 font-medium">👉 Выбери, что тебе интересно сейчас:</p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setCurrentView('new_orders')}>
+        <Card className="cursor-pointer hover:shadow-lg hover:scale-105 transition-all duration-200 border-primary/20" onClick={() => setCurrentView('new_orders')}>
           <CardHeader className="text-center">
             <Package className="h-12 w-12 mx-auto text-primary mb-2" />
-            <CardTitle>📦 Новые заказы</CardTitle>
-            <CardDescription>Посмотреть свежие задачки рядом с тобой</CardDescription>
+            <CardTitle className="text-lg">📦 Посмотреть новые заказы</CardTitle>
+            <CardDescription>Свежие задачки рядом с тобой</CardDescription>
           </CardHeader>
         </Card>
 
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setCurrentView('my_orders')}>
+        <Card className="cursor-pointer hover:shadow-lg hover:scale-105 transition-all duration-200 border-primary/20" onClick={() => setCurrentView('my_orders')}>
           <CardHeader className="text-center">
             <Wrench className="h-12 w-12 mx-auto text-primary mb-2" />
-            <CardTitle>🛠 Мои заказы</CardTitle>
+            <CardTitle className="text-lg">🛠 Мои заказы</CardTitle>
             <CardDescription>В работе и выполненные</CardDescription>
           </CardHeader>
         </Card>
 
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setCurrentView('wallet')}>
+        <Card className="cursor-pointer hover:shadow-lg hover:scale-105 transition-all duration-200 border-primary/20" onClick={() => setCurrentView('wallet')}>
           <CardHeader className="text-center">
             <Wallet className="h-12 w-12 mx-auto text-primary mb-2" />
-            <CardTitle>💰 Кошелёк</CardTitle>
+            <CardTitle className="text-lg">💰 Кошелёк</CardTitle>
             <CardDescription>Баланс, история, вывод средств</CardDescription>
           </CardHeader>
         </Card>
 
-        <Card className="cursor-pointer hover:shadow-md transition-shadow" onClick={() => setCurrentView('settings')}>
+        <Card className="cursor-pointer hover:shadow-lg hover:scale-105 transition-all duration-200 border-primary/20" onClick={() => setCurrentView('settings')}>
           <CardHeader className="text-center">
             <Settings className="h-12 w-12 mx-auto text-primary mb-2" />
-            <CardTitle>⚙️ Настройки</CardTitle>
-            <CardDescription>Профиль, район работы, график</CardDescription>
+            <CardTitle className="text-lg">⚙️ Настройки</CardTitle>
+            <CardDescription>Профиль, город, график</CardDescription>
           </CardHeader>
         </Card>
       </div>
@@ -389,8 +389,8 @@ const Provider = () => {
             <div className="flex items-center gap-3">
               <MapPin className="h-6 w-6 text-primary" />
               <div>
-                <h3 className="font-semibold">🗺️ Район работы</h3>
-                <p className="text-sm text-muted-foreground">Центральный район</p>
+                <h3 className="font-semibold">🗺️ Город</h3>
+                <p className="text-sm text-muted-foreground">Москва</p>
               </div>
             </div>
           </CardContent>

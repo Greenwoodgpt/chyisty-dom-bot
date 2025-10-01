@@ -107,6 +107,15 @@ function getMainMenuKeyboard() {
   ]};
 }
 
+function getProviderMainMenuKeyboard() {
+  return { inline_keyboard: [
+    [{ text: '📦 Новые заказы', callback_data: 'provider_new_orders' }],
+    [{ text: '🛠 Мои заказы', callback_data: 'provider_my_orders' }],
+    [{ text: '💰 Кошелёк', callback_data: 'provider_wallet' }],
+    [{ text: '⚙️ Настройки', callback_data: 'provider_settings' }],
+  ]};
+}
+
 // Универсальная строка «Назад / В начало»
 function getBackHomeRow() {
   return [{ text: '⬅️ Назад', callback_data: 'go_back' }, { text: '🏠 В начало', callback_data: 'go_home' }];
@@ -387,7 +396,7 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
     case 'role_performer':
       await supabase.from('tg_user_profile').upsert({ user_id: userId, role: 'performer' });
       await updateUserState(userId, 'start', {});
-      return await sendMessage(chatId, '🧹 Роль исполнителя сохранена. В ближайшее время подключим интерфейс для исполнителей. Спасибо!');
+      return await sendMessage(chatId, '🦸‍♂️ Добро пожаловать, герой чистоты!\n\nГотов к новым подвигам по выносу мусора? 🚀\n\nВыбери действие:', getProviderMainMenuKeyboard());
 
     // Старт заказа (для заказчика)
     case 'start_order_yes':
@@ -403,6 +412,109 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
       return await sendMessage(chatId, '📞 Для связи с оператором напишите нам: @operator_username или позвоните по телефону: +7 (xxx) xxx-xx-xx');
     case 'help':
       return await handleHelp(callbackQuery.message!);
+
+    // Меню исполнителя
+    case 'provider_main_menu':
+      await updateUserState(userId, 'start', {});
+      return await sendMessage(chatId, '🦸‍♂️ Главное меню исполнителя\n\nВыбери действие:', getProviderMainMenuKeyboard());
+
+    case 'provider_new_orders': {
+      const { data: orders, error } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('status', 'new')
+        .order('created_at', { ascending: true })
+        .limit(10);
+
+      if (error || !orders || orders.length === 0) {
+        return await sendMessage(chatId, '📭 Пока нет новых заказов.\n\nКак только появятся свежие задачки, я сразу тебе сообщу!', getProviderMainMenuKeyboard());
+      }
+
+      let message = '📦 Вот свежие задачки рядом с тобой:\n\n';
+      const keyboard = [];
+
+      orders.forEach((order, index) => {
+        const bags = order.bags || [];
+        const bagsText = bags.length > 0 ? bags.join(', ') : (order.amount / 100) + '₽';
+        message += `${index + 1}. 🏠 ${order.address}\n`;
+        message += `   📦 ${bagsText}\n`;
+        message += `   ⏰ ${order.time_option === 'within_hour' ? 'Срочно' : order.custom_time || 'По согласованию'}\n\n`;
+        
+        keyboard.push([{ text: `⚡ Взять заказ #${index + 1}`, callback_data: `provider_take_${order.id}` }]);
+      });
+
+      keyboard.push([{ text: '🔙 Назад', callback_data: 'provider_main_menu' }]);
+      return await sendMessage(chatId, message, { inline_keyboard: keyboard });
+    }
+
+    case 'provider_my_orders': {
+      const { data: orders } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('status', 'in_progress')
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (!orders || orders.length === 0) {
+        return await sendMessage(chatId, '🛠 У тебя пока нет заказов в работе.\n\nЗагляни в раздел «Новые заказы» 📦', getProviderMainMenuKeyboard());
+      }
+
+      let message = '🛠 Твои текущие дела:\n\n';
+      const keyboard = [];
+
+      orders.forEach((order, index) => {
+        message += `${index + 1}. 🏠 ${order.address}\n`;
+        message += `   📦 ${order.amount / 100}₽\n\n`;
+        keyboard.push([{ text: `✅ Завершить заказ #${index + 1}`, callback_data: `provider_complete_${order.id}` }]);
+      });
+
+      keyboard.push([{ text: '🔙 Назад', callback_data: 'provider_main_menu' }]);
+      return await sendMessage(chatId, message, { inline_keyboard: keyboard });
+    }
+
+    case 'provider_wallet': {
+      const { data: profile } = await supabase
+        .from('tg_user_profile')
+        .select('eco_points')
+        .eq('user_id', userId)
+        .single();
+
+      const balance = profile?.eco_points || 0;
+
+      return await sendMessage(
+        chatId,
+        `💰 Твой кошелёк\n\n💵 Баланс: ${balance}₽\n\n📊 История операций скоро будет доступна!\n\n💳 Хочешь вывести средства или оставить копить?`,
+        {
+          inline_keyboard: [
+            [{ text: '💸 Вывести средства', callback_data: 'provider_withdraw' }],
+            [{ text: '🔙 Назад', callback_data: 'provider_main_menu' }]
+          ]
+        }
+      );
+    }
+
+    case 'provider_withdraw':
+      return await sendMessage(chatId, '💳 Функция вывода средств будет доступна позже.\n\nМы работаем над этим!', getProviderMainMenuKeyboard());
+
+    case 'provider_settings':
+      return await sendMessage(
+        chatId,
+        '⚙️ Настройки исполнителя\n\nЗдесь можно настроить:',
+        {
+          inline_keyboard: [
+            [{ text: '🌆 Изменить город', callback_data: 'provider_change_city' }],
+            [{ text: '⏰ График работы', callback_data: 'provider_schedule' }],
+            [{ text: '🔔 Уведомления', callback_data: 'provider_notifications' }],
+            [{ text: '🔙 Назад', callback_data: 'provider_main_menu' }]
+          ]
+        }
+      );
+
+    case 'provider_change_city':
+    case 'provider_schedule':
+    case 'provider_notifications':
+      return await sendMessage(chatId, '⚙️ Эта функция скоро будет доступна!', getProviderMainMenuKeyboard());
+
     case 'cancel':
       await updateUserState(userId, 'start', {});
       return await sendMessage(chatId, '❌ Действие отменено.', getMainMenuKeyboard());
@@ -490,6 +602,44 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
     case 'comment_no':
       await updateUserState(userId, 'start', {});
       return await sendMessage(chatId, '✅ Ваш заказ принят! Курьер скоро приедет и аккуратно вынесет ваш мусор. Спасибо, что выбираете Мусоробота 🤖✨\n\nВы можете оформить 🏠 Новый заказ командой /start.');
+
+    // Исполнитель: взятие и завершение заказов
+    default:
+      if (data.startsWith('provider_take_')) {
+        const orderId = data.replace('provider_take_', '');
+        const { error } = await supabase
+          .from('orders')
+          .update({ status: 'in_progress', updated_at: new Date().toISOString() })
+          .eq('id', orderId)
+          .eq('status', 'new');
+
+        if (error) {
+          return await sendMessage(chatId, '❌ Не удалось взять заказ. Возможно, его уже взял другой исполнитель.', getProviderMainMenuKeyboard());
+        }
+        return await sendMessage(chatId, '🎉 Отличный выбор!\n\nЗаказ закреплён за тобой. Успехов! 🚀', getProviderMainMenuKeyboard());
+      }
+
+      if (data.startsWith('provider_complete_')) {
+        const orderId = data.replace('provider_complete_', '');
+        const { data: order, error } = await supabase
+          .from('orders')
+          .update({ status: 'completed', updated_at: new Date().toISOString() })
+          .eq('id', orderId)
+          .select()
+          .single();
+
+        if (error || !order) {
+          return await sendMessage(chatId, '❌ Не удалось завершить заказ.', getProviderMainMenuKeyboard());
+        }
+
+        const earnings = order.amount / 100;
+        await supabase
+          .from('tg_user_profile')
+          .update({ eco_points: supabase.rpc('increment_eco_points', { user_id: userId, amount: earnings }) })
+          .eq('user_id', userId);
+
+        return await sendMessage(chatId, `🌟 Красота! Заказ закрыт.\n\n💰 +${earnings}₽ улетели на твой счёт!`, getProviderMainMenuKeyboard());
+      }
   }
 }
 

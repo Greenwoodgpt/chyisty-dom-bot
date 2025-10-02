@@ -456,29 +456,90 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
       return await sendMessage(chatId, message, { inline_keyboard: keyboard });
     }
 
-    case 'provider_my_orders': {
+    case 'provider_my_orders':
+      return await sendMessage(
+        chatId,
+        '🛠 Мои заказы\n\nВыберите категорию:',
+        {
+          inline_keyboard: [
+            [{ text: '⚡ Текущие заказы', callback_data: 'provider_current_orders' }],
+            [{ text: '✅ Выполненные заказы', callback_data: 'provider_completed_orders' }],
+            [{ text: '🔙 Назад', callback_data: 'provider_main_menu' }]
+          ]
+        }
+      );
+
+    case 'provider_current_orders': {
       const { data: orders } = await supabase
         .from('orders')
         .select('*')
+        .eq('performer_id', userId)
         .eq('status', 'in_progress')
         .order('created_at', { ascending: false })
         .limit(10);
 
       if (!orders || orders.length === 0) {
-        return await sendMessage(chatId, '🛠 У тебя пока нет заказов в работе.\n\nЗагляни в раздел «Новые заказы» 📦', getProviderMainMenuKeyboard());
+        return await sendMessage(
+          chatId,
+          '📭 У тебя пока нет заказов в работе.\n\nЗагляни в раздел «Новые заказы» 📦',
+          {
+            inline_keyboard: [[{ text: '🔙 Назад', callback_data: 'provider_my_orders' }]]
+          }
+        );
       }
 
-      let message = '🛠 Твои текущие дела:\n\n';
+      let message = '⚡ Текущие заказы:\n\n';
       const keyboard = [];
 
       orders.forEach((order, index) => {
         message += `${index + 1}. 🏠 ${order.address}\n`;
-        message += `   📦 ${order.amount / 100}₽\n\n`;
+        message += `   📦 ${order.amount / 100}₽\n`;
+        message += `   🕐 Создан: ${new Date(order.created_at).toLocaleDateString('ru-RU')}\n\n`;
         keyboard.push([{ text: `✅ Завершить заказ #${index + 1}`, callback_data: `provider_complete_${order.id}` }]);
       });
 
-      keyboard.push([{ text: '🔙 Назад', callback_data: 'provider_main_menu' }]);
+      keyboard.push([{ text: '🔙 Назад', callback_data: 'provider_my_orders' }]);
       return await sendMessage(chatId, message, { inline_keyboard: keyboard });
+    }
+
+    case 'provider_completed_orders': {
+      const { data: orders } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('performer_id', userId)
+        .eq('status', 'completed')
+        .order('updated_at', { ascending: false })
+        .limit(20);
+
+      if (!orders || orders.length === 0) {
+        return await sendMessage(
+          chatId,
+          '📭 У тебя пока нет выполненных заказов.',
+          {
+            inline_keyboard: [[{ text: '🔙 Назад', callback_data: 'provider_my_orders' }]]
+          }
+        );
+      }
+
+      let message = '✅ История выполненных заказов:\n\n';
+
+      orders.forEach((order, index) => {
+        const earnings = order.amount / 100;
+        const commission = Math.max(20, earnings * 0.15);
+        const netEarnings = earnings - commission;
+        
+        message += `${index + 1}. 🏠 ${order.address}\n`;
+        message += `   💰 Заработано: ${netEarnings.toFixed(2)}₽\n`;
+        message += `   📅 ${new Date(order.updated_at).toLocaleDateString('ru-RU')}\n\n`;
+      });
+
+      return await sendMessage(
+        chatId,
+        message,
+        {
+          inline_keyboard: [[{ text: '🔙 Назад', callback_data: 'provider_my_orders' }]]
+        }
+      );
     }
 
     case 'provider_wallet': {

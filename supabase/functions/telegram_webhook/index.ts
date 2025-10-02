@@ -603,42 +603,216 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
       await updateUserState(userId, 'start', {});
       return await sendMessage(chatId, '✅ Ваш заказ принят! Курьер скоро приедет и аккуратно вынесет ваш мусор. Спасибо, что выбираете Мусоробота 🤖✨\n\nВы можете оформить 🏠 Новый заказ командой /start.');
 
-    // Исполнитель: взятие и завершение заказов
+    // Исполнитель: взятие заказа
     default:
       if (data.startsWith('provider_take_')) {
         const orderId = data.replace('provider_take_', '');
-        const { error } = await supabase
+        
+        // Проверяем, что заказ существует и доступен
+        const { data: orderCheck } = await supabase
           .from('orders')
-          .update({ status: 'in_progress', updated_at: new Date().toISOString() })
+          .select('*')
           .eq('id', orderId)
-          .eq('status', 'new');
+          .eq('status', 'new')
+          .maybeSingle();
 
-        if (error) {
+        if (!orderCheck) {
           return await sendMessage(chatId, '❌ Не удалось взять заказ. Возможно, его уже взял другой исполнитель.', getProviderMainMenuKeyboard());
         }
-        return await sendMessage(chatId, '🎉 Отличный выбор!\n\nЗаказ закреплён за тобой. Успехов! 🚀', getProviderMainMenuKeyboard());
+
+        // Обновляем заказ и привязываем исполнителя
+        const { error } = await supabase
+          .from('orders')
+          .update({ 
+            status: 'in_progress', 
+            performer_id: userId,
+            updated_at: new Date().toISOString() 
+          })
+          .eq('id', orderId);
+
+        if (error) {
+          console.error('Error taking order:', error);
+          return await sendMessage(chatId, '❌ Произошла ошибка при взятии заказа.', getProviderMainMenuKeyboard());
+        }
+
+        // Сохраняем ID заказа в состоянии исполнителя
+        temp.current_order_id = orderId;
+        await updateUserState(userId, 'provider_working', temp);
+
+        return await sendMessage(
+          chatId, 
+          '🎉 Отличный выбор!\n\nЗаказ закреплён за тобой.\n\n📸 Теперь нужно сделать фото мусорного пакета:\n\n1️⃣ Фото пакета возле двери клиента\n2️⃣ Фото пакета на фоне мусорки\n\nНачнём?',
+          {
+            inline_keyboard: [
+              [{ text: '📸 Сфотографировал пакет возле двери', callback_data: `photo_at_door_${orderId}` }],
+              [{ text: '🤝 Передал в руки', callback_data: `handed_over_${orderId}` }],
+              [{ text: '🔙 Назад', callback_data: 'provider_my_orders' }]
+            ]
+          }
+        );
       }
 
+      // Фото у двери
+      if (data.startsWith('photo_at_door_')) {
+        const orderId = data.replace('photo_at_door_', '');
+        temp.current_order_id = orderId;
+        temp.photo_step = 'at_door';
+        await updateUserState(userId, 'awaiting_photo_at_door', temp);
+        return await sendMessage(chatId, '📸 Отлично! Пришлите фото мусорного пакета возле двери клиента.');
+      }
+
+      // Передано в руки
+      if (data.startsWith('handed_over_')) {
+        const orderId = data.replace('handed_over_', '');
+        
+        // Получаем данные заказа для отправки уведомления заказчику
+        const { data: order } = await supabase
+          .from('orders')
+          .select('*')
+          .eq('id', orderId)
+          .single();
+
+        if (order) {
+          // Отправляем запрос заказчику на подтверждение
+          await sendMessage(
+            order.user_id,
+            '🤝 Исполнитель сообщает, что передал вам мусорный пакет в руки.\n\nПодтвердите, пожалуйста:',
+            {
+              inline_keyboard: [
+                [{ text: '✅ Подтверждаю', callback_data: `confirm_handover_${orderId}` }],
+                [{ text: '❌ Не получал', callback_data: `deny_handover_${orderId}` }]
+              ]
+            }
+          );
+        }
+
+        temp.current_order_id = orderId;
+        temp.handover_requested = true;
+        await updateUserState(userId, 'awaiting_handover_confirmation', temp);
+        return await sendMessage(chatId, '⏳ Запрос отправлен заказчику. Ожидайте подтверждения...');
+      }
+
+      // Подтверждение передачи в руки от заказчика
+      if (data.startsWith('confirm_handover_')) {
+        const orderId = data.replace('confirm_handover_', '');
+        
+        // Получаем исполнителя
+        const { data: order } = await supabase
+          .from('orders')
+          .select('performer_id')
+          .eq('id', orderId)
+          .single();
+
+        if (order?.performer_id) {
+          // Уведомляем исполнителя
+          const performerState = await getUserState(order.performer_id);
+          const performerTemp = performerState.data || {};
+          performerTemp.current_order_id = orderId;
+          performerTemp.photo_step = 'at_bin';
+          await updateUserState(order.performer_id, 'awaiting_photo_at_bin', performerTemp);
+          
+          await sendMessage(
+            order.performer_id,
+            '✅ Заказчик подтвердил получение!\n\n📸 Теперь пришлите фото этого мусорного пакета на фоне мусорки.'
+          );
+        }
+
+        return await sendMessage(chatId, '✅ Спасибо за подтверждение!');
+      }
+
+      // Отклонение передачи в руки
+      if (data.startsWith('deny_handover_')) {
+        const orderId = data.replace('deny_handover_', '');
+        
+        const { data: order } = await supabase
+          .from('orders')
+          .select('performer_id')
+          .eq('id', orderId)
+          .single();
+
+        if (order?.performer_id) {
+          await sendMessage(
+            order.performer_id,
+            '❌ Заказчик не подтвердил передачу.\n\nПожалуйста, попробуйте связаться с клиентом или сделайте фото у двери.',
+            {
+              inline_keyboard: [
+                [{ text: '📸 Сфотографировал у двери', callback_data: `photo_at_door_${orderId}` }],
+                [{ text: '🔙 К моим заказам', callback_data: 'provider_my_orders' }]
+              ]
+            }
+          );
+        }
+
+        return await sendMessage(chatId, 'Исполнитель уведомлён.');
+      }
+
+      // Завершение заказа
       if (data.startsWith('provider_complete_')) {
         const orderId = data.replace('provider_complete_', '');
+        temp.current_order_id = orderId;
+        await updateUserState(userId, 'awaiting_completion_confirm', temp);
+        
+        return await sendMessage(
+          chatId,
+          '✅ Подтвердите выполнение заказа.\n\nПосле подтверждения средства будут зачислены на ваш счёт.',
+          {
+            inline_keyboard: [
+              [{ text: '✅ Подтверждаю выполнение', callback_data: `final_confirm_${orderId}` }],
+              [{ text: '❌ Отмена', callback_data: 'provider_my_orders' }]
+            ]
+          }
+        );
+      }
+
+      // Финальное подтверждение
+      if (data.startsWith('final_confirm_')) {
+        const orderId = data.replace('final_confirm_', '');
+        
         const { data: order, error } = await supabase
           .from('orders')
           .update({ status: 'completed', updated_at: new Date().toISOString() })
           .eq('id', orderId)
+          .eq('performer_id', userId)
           .select()
-          .single();
+          .maybeSingle();
 
         if (error || !order) {
+          console.error('Error completing order:', error);
           return await sendMessage(chatId, '❌ Не удалось завершить заказ.', getProviderMainMenuKeyboard());
         }
 
-        const earnings = order.amount / 100;
+        // Рассчитываем заработок (сумма минус комиссия 15%, минимум 20 руб)
+        const totalAmount = order.amount / 100;
+        const commission = Math.max(20, totalAmount * 0.15);
+        const earnings = totalAmount - commission;
+
+        // Обновляем баланс исполнителя
+        const { data: profile } = await supabase
+          .from('tg_user_profile')
+          .select('eco_points')
+          .eq('user_id', userId)
+          .maybeSingle();
+
+        const currentBalance = profile?.eco_points || 0;
         await supabase
           .from('tg_user_profile')
-          .update({ eco_points: supabase.rpc('increment_eco_points', { user_id: userId, amount: earnings }) })
-          .eq('user_id', userId);
+          .upsert({ 
+            user_id: userId, 
+            eco_points: currentBalance + earnings 
+          });
 
-        return await sendMessage(chatId, `🌟 Красота! Заказ закрыт.\n\n💰 +${earnings}₽ улетели на твой счёт!`, getProviderMainMenuKeyboard());
+        // Уведомляем заказчика
+        await sendMessage(
+          order.user_id,
+          `✅ Ваш заказ выполнен!\n\n🎉 Спасибо за использование Мусоробота! 🤖✨`
+        );
+
+        await updateUserState(userId, 'provider_main', {});
+        return await sendMessage(
+          chatId, 
+          `🌟 Красота! Заказ закрыт.\n\n💰 Заработано: +${earnings.toFixed(2)}₽\n💸 Комиссия сервиса: ${commission.toFixed(2)}₽\n\n💵 Новый баланс: ${(currentBalance + earnings).toFixed(2)}₽`, 
+          getProviderMainMenuKeyboard()
+        );
       }
   }
 }

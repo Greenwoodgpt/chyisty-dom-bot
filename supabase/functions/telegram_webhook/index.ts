@@ -18,6 +18,15 @@ interface TelegramMessage {
   chat: TelegramChat;
   date: number;
   text?: string;
+  photo?: TelegramPhotoSize[];
+}
+
+interface TelegramPhotoSize {
+  file_id: string;
+  file_unique_id: string;
+  width: number;
+  height: number;
+  file_size?: number;
 }
 
 interface TelegramCallbackQuery {
@@ -839,6 +848,43 @@ async function handleTextMessage(message: TelegramMessage) {
   const userState = await getUserState(userId);
   const temp = { ...(userState.data || {}) };
 
+  // Обработка фото от исполнителя
+  if (message.photo && (userState.state === 'awaiting_photo_at_door' || userState.state === 'awaiting_photo_at_bin')) {
+    const orderId = temp.current_order_id;
+    
+    if (!orderId) {
+      await sendMessage(chatId, '⚠️ Не найден активный заказ.');
+      return;
+    }
+
+    if (userState.state === 'awaiting_photo_at_door') {
+      // Фото у двери получено
+      temp.photo_at_door_received = true;
+      temp.photo_step = 'at_bin';
+      await updateUserState(userId, 'awaiting_photo_at_bin', temp);
+      return await sendMessage(
+        chatId,
+        '✅ Отлично! Фото у двери получено.\n\n📸 Теперь пришлите фото этого мусорного пакета на фоне мусорки.'
+      );
+    }
+
+    if (userState.state === 'awaiting_photo_at_bin') {
+      // Фото у мусорки получено - можно завершать заказ
+      temp.photo_at_bin_received = true;
+      await updateUserState(userId, 'provider_ready_to_complete', temp);
+      return await sendMessage(
+        chatId,
+        '✅ Супер! Оба фото получены.\n\n🎯 Готов завершить заказ?',
+        {
+          inline_keyboard: [
+            [{ text: '✅ Завершить заказ', callback_data: `provider_complete_${orderId}` }],
+            [{ text: '🔙 К моим заказам', callback_data: 'provider_my_orders' }]
+          ]
+        }
+      );
+    }
+  }
+
   switch (userState.state) {
     case 'awaiting_city':
       if (text.length < 2) { await sendMessage(chatId, '❌ Название города слишком короткое.', { inline_keyboard: [getBackHomeRow()] }); return; }
@@ -884,6 +930,11 @@ async function handleTextMessage(message: TelegramMessage) {
       return;
     }
 
+    case 'awaiting_photo_at_door':
+    case 'awaiting_photo_at_bin':
+      await sendMessage(chatId, '📸 Пожалуйста, пришлите фото (не текст).');
+      return;
+
     case 'awaiting_custom_time': // совместимость со старым сценарием
       const tempDataCustomTime = { ...temp, custom_time: text };
       await updateUserState(userId, 'awaiting_confirmation', tempDataCustomTime);
@@ -906,7 +957,7 @@ serve(async (req) => {
       const message = update.message;
       if (message.text?.startsWith('/start'))      await handleStart(message);
       else if (message.text?.startsWith('/help')) await handleHelp(message);
-      else if (message.text)                      await handleTextMessage(message);
+      else if (message.text || message.photo)     await handleTextMessage(message);
     } else if (update && update.callback_query) {
       await handleCallbackQuery(update.callback_query);
     }

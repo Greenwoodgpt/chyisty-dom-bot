@@ -25,6 +25,7 @@ export type Database = {
           first_name: string
           id: string
           last_name: string | null
+          performer_id: number | null
           size_option: string
           status: string
           time_option: string
@@ -42,6 +43,7 @@ export type Database = {
           first_name: string
           id?: string
           last_name?: string | null
+          performer_id?: number | null
           size_option: string
           status?: string
           time_option: string
@@ -59,6 +61,7 @@ export type Database = {
           first_name?: string
           id?: string
           last_name?: string | null
+          performer_id?: number | null
           size_option?: string
           status?: string
           time_option?: string

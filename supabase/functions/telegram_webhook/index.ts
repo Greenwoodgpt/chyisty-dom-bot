@@ -79,6 +79,21 @@ async function sendMessage(chatId: number, text: string, replyMarkup?: any) {
   try { return JSON.parse(bodyText); } catch { return { raw: bodyText }; }
 }
 
+async function sendPhoto(chatId: number, photoFileId: string, caption?: string) {
+  const response = await fetch(`${TELEGRAM_API_URL}/sendPhoto`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, photo: photoFileId, caption })
+  });
+  const bodyText = await response.text();
+  if (!response.ok) {
+    console.error('sendPhoto failed', { status: response.status, body: bodyText });
+  } else {
+    console.log('sendPhoto ok', { status: response.status });
+  }
+  try { return JSON.parse(bodyText); } catch { return { raw: bodyText }; }
+}
+
 async function answerCallbackQuery(callbackQueryId: string, text?: string) {
   await fetch(`${TELEGRAM_API_URL}/answerCallbackQuery`, {
     method: 'POST',
@@ -299,6 +314,53 @@ async function saveOrder(userId: number, chatId: number, user: TelegramUser, tem
   return data;
 }
 
+async function notifyProviders(order: any) {
+  // Получаем всех исполнителей с подходящим городом и настройками
+  const { data: providers } = await supabase
+    .from('tg_user_profile')
+    .select('user_id, city, notification_filter, schedule_days, schedule_time')
+    .eq('role', 'performer')
+    .not('city', 'is', null);
+
+  if (!providers || providers.length === 0) return;
+
+  const isUrgent = order.time_option === 'within_hour';
+  const bagCount = order.bags ? order.bags.length : 1;
+  const isLarge = bagCount >= 2;
+
+  for (const provider of providers) {
+    // Фильтр по городу (упрощенно - по совпадению части города в адресе)
+    // TODO: улучшить определение города из адреса
+    if (provider.city && !order.address.toLowerCase().includes(provider.city.toLowerCase())) {
+      continue;
+    }
+
+    // Фильтр по типу уведомлений
+    if (provider.notification_filter === 'filter_none') continue;
+    if (provider.notification_filter === 'filter_urgent' && !isUrgent) continue;
+    if (provider.notification_filter === 'filter_large' && !isLarge) continue;
+
+    // TODO: Проверка графика работы (если указан)
+
+    // Отправляем уведомление
+    const notificationText = `
+🔔 <b>НОВЫЙ ЗАКАЗ!</b>
+
+📍 ${order.address}
+💰 ${order.amount / 100}₽
+⏰ ${isUrgent ? 'Срочно (в течение часа)' : order.custom_time || order.time_option}
+
+👉 Открой меню исполнителя, чтобы взять заказ!`;
+
+    await sendMessage(provider.user_id, notificationText, {
+      inline_keyboard: [
+        [{ text: '📦 Посмотреть заказ', callback_data: 'provider_new_orders' }],
+        [{ text: '🏠 Главное меню', callback_data: 'provider_main_menu' }]
+      ]
+    });
+  }
+}
+
 async function notifyAdmin(order: any) {
   const sizeNames: { [key: string]: string } = { 'one_bag': 'Один пакет (до 6 кг)', 'two_bags': 'Два пакета', 'three_bags': 'Три пакета' };
   const timeNames: { [key: string]: string } = { 'within_hour': 'В течение часа', 'custom': 'Указанное время' };
@@ -399,19 +461,68 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
       }
 
     // Выбор роли
-    case 'role_customer':
+    case 'role_customer': {
       await supabase.from('tg_user_profile').upsert({ user_id: userId, role: 'customer' });
       return await showGreeting();
-    case 'role_performer':
+    }
+    case 'role_performer': {
+      const { data: profile } = await supabase
+        .from('tg_user_profile')
+        .select('city')
+        .eq('user_id', userId)
+        .single();
+      
+      if (!profile?.city) {
+        await supabase.from('tg_user_profile').upsert({ user_id: userId, role: 'performer' });
+        await updateUserState(userId, 'awaiting_provider_city', {});
+        return await sendMessage(
+          chatId,
+          '🦸‍♂️ Добро пожаловать, герой чистоты!\n\n🌆 Для начала работы укажите ваш город:\n\n(Город можно будет изменить позже в настройках)'
+        );
+      }
+      
       await supabase.from('tg_user_profile').upsert({ user_id: userId, role: 'performer' });
       await updateUserState(userId, 'start', {});
       return await sendMessage(chatId, '🦸‍♂️ Добро пожаловать, герой чистоты!\n\nГотов к новым подвигам по выносу мусора? 🚀\n\nВыбери действие:', getProviderMainMenuKeyboard());
+    }
 
     // Старт заказа (для заказчика)
-    case 'start_order_yes':
+    case 'start_order_yes': {
+      const { data: profile } = await supabase
+        .from('tg_user_profile')
+        .select('saved_address')
+        .eq('user_id', userId)
+        .single();
+      
+      if (profile?.saved_address) {
+        temp.saved_address_available = profile.saved_address;
+        await updateUserState(userId, 'choose_address_option', temp);
+        return await sendMessage(
+          chatId,
+          '📍 У вас есть сохранённый адрес:\n\n' + profile.saved_address + '\n\nИспользовать его?',
+          {
+            inline_keyboard: [
+              [{ text: '✅ Да, использовать', callback_data: 'use_saved_address' }],
+              [{ text: '🏠 Ввести новый адрес', callback_data: 'enter_new_address' }],
+              getBackHomeRow()
+            ]
+          }
+        );
+      }
+      
       return await showAskCity();
+    }
     case 'start_order_no':
       return await showRole();
+    
+    case 'use_saved_address':
+      temp.address = temp.saved_address_available;
+      temp.city = 'Сохранённый город';
+      await updateUserState(userId, 'ask_save_address', temp);
+      return await showAskTime();
+    
+    case 'enter_new_address':
+      return await showAskCity();
 
     // Старое меню (оставим рабочим)
     case 'new_order':
@@ -495,7 +606,7 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
         message += `${index + 1}. 🏠 ${order.address}\n`;
         message += `   📦 ${order.amount / 100}₽\n`;
         message += `   🕐 Создан: ${new Date(order.created_at).toLocaleDateString('ru-RU')}\n\n`;
-        keyboard.push([{ text: `✅ Завершить заказ #${index + 1}`, callback_data: `provider_complete_${order.id}` }]);
+        keyboard.push([{ text: `✅ Завершить заказ #${index + 1}`, callback_data: `provider_request_photos_${order.id}` }]);
       });
 
       keyboard.push([{ text: '🔙 Назад', callback_data: 'provider_my_orders' }]);
@@ -522,6 +633,7 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
       }
 
       let message = '✅ История выполненных заказов:\n\n';
+      const keyboard = [];
 
       orders.forEach((order, index) => {
         const earnings = order.amount / 100;
@@ -530,16 +642,17 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
         
         message += `${index + 1}. 🏠 ${order.address}\n`;
         message += `   💰 Заработано: ${netEarnings.toFixed(2)}₽\n`;
-        message += `   📅 ${new Date(order.updated_at).toLocaleDateString('ru-RU')}\n\n`;
+        message += `   📅 ${new Date(order.updated_at).toLocaleDateString('ru-RU')}\n`;
+        
+        if (order.photo_door && order.photo_bin) {
+          message += `   📸 Фото: доступны\n`;
+        }
+        message += `\n`;
       });
 
-      return await sendMessage(
-        chatId,
-        message,
-        {
-          inline_keyboard: [[{ text: '🔙 Назад', callback_data: 'provider_my_orders' }]]
-        }
-      );
+      keyboard.push([{ text: '🔙 Назад', callback_data: 'provider_my_orders' }]);
+
+      return await sendMessage(chatId, message, { inline_keyboard: keyboard });
     }
 
     case 'provider_wallet': {
@@ -580,7 +693,14 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
       );
 
     case 'provider_change_city':
-      return await sendMessage(chatId, '⚙️ Эта функция скоро будет доступна!', getProviderMainMenuKeyboard());
+      await updateUserState(userId, 'awaiting_provider_city', {});
+      return await sendMessage(
+        chatId,
+        '🌆 Введите название вашего города:',
+        {
+          inline_keyboard: [[{ text: '🔙 Назад', callback_data: 'provider_settings' }]]
+        }
+      );
 
     case 'provider_schedule':
       return await sendMessage(
@@ -872,6 +992,7 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
         await updateUserState(userId, 'awaiting_comment_choice', temp);
         await sendMessage(chatId, '✅ Ваш заказ оплачен и принят! Хотите добавить комментарий для курьера?', getCommentChoiceKeyboard());
         await notifyAdmin(order);
+        await notifyProviders(order);
       } else {
         await sendMessage(chatId, '❌ Произошла ошибка при создании заказа. Попробуйте еще раз.');
       }
@@ -1029,7 +1150,92 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
         return await sendMessage(chatId, 'Исполнитель уведомлён.');
       }
 
-      // Завершение заказа
+      // Проверка выполнения заказа заказчиком
+      if (data.startsWith('check_order_')) {
+        const orderId = data.replace('check_order_', '');
+        
+        const { data: order } = await supabase
+          .from('orders')
+          .select('*')
+          .eq('id', orderId)
+          .single();
+        
+        if (!order) {
+          return await sendMessage(chatId, '❌ Заказ не найден.');
+        }
+
+        if (order.photo_door || order.photo_bin) {
+          let message = '📸 Фото выполнения заказа:\n\n';
+          
+          if (order.photo_door) {
+            message += '✅ Фото у двери: есть\n';
+          } else {
+            message += '❌ Фото у двери: нет\n';
+          }
+          
+          if (order.photo_bin) {
+            message += '✅ Фото у мусорки: есть\n';
+          } else {
+            message += '❌ Фото у мусорки: нет\n';
+          }
+          
+          await sendMessage(chatId, message);
+          
+          // Отправляем фото, если они есть
+          if (order.photo_door) {
+            await sendPhoto(chatId, order.photo_door, '📷 Фото мусорного пакета у двери');
+          }
+          
+          if (order.photo_bin) {
+            await sendPhoto(chatId, order.photo_bin, '📷 Фото мусорного пакета у мусорки');
+          }
+          
+          return await sendMessage(
+            chatId, 
+            'Заказ выполнен качественно? 🌟',
+            {
+              inline_keyboard: [
+                [{ text: '⭐⭐⭐⭐⭐ Отлично!', callback_data: `rate_5_${orderId}` }],
+                [{ text: '⭐⭐⭐ Хорошо', callback_data: `rate_3_${orderId}` }],
+                [{ text: '⭐ Плохо', callback_data: `rate_1_${orderId}` }]
+              ]
+            }
+          );
+        } else {
+          return await sendMessage(
+            chatId, 
+            '📭 К сожалению, исполнитель не загрузил фото выполнения заказа.\n\nЗаказ был отмечен как выполненный.'
+          );
+        }
+      }
+
+      // Оценка заказа
+      if (data.startsWith('rate_')) {
+        const parts = data.split('_');
+        const rating = parts[1];
+        const orderId = parts.slice(2).join('_');
+        
+        // TODO: сохранить рейтинг в БД
+        
+        return await sendMessage(
+          chatId,
+          `⭐ Спасибо за оценку!\n\nВаше мнение помогает нам становиться лучше. 🙏`
+        );
+      }
+
+      // Запрос фото для завершения заказа
+      if (data.startsWith('provider_request_photos_')) {
+        const orderId = data.replace('provider_request_photos_', '');
+        temp.current_order_id = orderId;
+        temp.photo_step = 'at_door';
+        await updateUserState(userId, 'awaiting_photo_at_door', temp);
+        return await sendMessage(
+          chatId,
+          '📸 Для завершения заказа нужно загрузить 2 фото:\n\n1️⃣ Фото мусорного пакета возле двери клиента\n2️⃣ Фото пакета на фоне мусорки\n\nПришлите первое фото (у двери):'
+        );
+      }
+
+      // Завершение заказа (старый хэндлер для совместимости)
       if (data.startsWith('provider_complete_')) {
         const orderId = data.replace('provider_complete_', '');
         temp.current_order_id = orderId;
@@ -1084,10 +1290,15 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
             eco_points: currentBalance + earnings 
           });
 
-        // Уведомляем заказчика
+        // Уведомляем заказчика с возможностью проверить выполнение
         await sendMessage(
           order.user_id,
-          `✅ Ваш заказ выполнен!\n\n🎉 Спасибо за использование Мусоробота! 🤖✨`
+          `✅ Ваш заказ выполнен!\n\n🎉 Спасибо за использование Мусоробота! 🤖✨\n\nВы можете проверить, как был выполнен заказ:`,
+          {
+            inline_keyboard: [
+              [{ text: '📸 Проверить выполнение заказа', callback_data: `check_order_${orderId}` }]
+            ]
+          }
         );
 
         await updateUserState(userId, 'provider_main', {});
@@ -1131,8 +1342,16 @@ async function handleTextMessage(message: TelegramMessage) {
       return;
     }
 
+    // Получаем file_id самого большого фото (последнее в массиве)
+    const photoFileId = message.photo[message.photo.length - 1].file_id;
+
     if (userState.state === 'awaiting_photo_at_door') {
-      // Фото у двери получено
+      // Сохраняем file_id фото у двери в БД
+      await supabase
+        .from('orders')
+        .update({ photo_door: photoFileId })
+        .eq('id', orderId);
+
       temp.photo_at_door_received = true;
       temp.photo_step = 'at_bin';
       await updateUserState(userId, 'awaiting_photo_at_bin', temp);
@@ -1143,7 +1362,12 @@ async function handleTextMessage(message: TelegramMessage) {
     }
 
     if (userState.state === 'awaiting_photo_at_bin') {
-      // Фото у мусорки получено - можно завершать заказ
+      // Сохраняем file_id фото у мусорки в БД
+      await supabase
+        .from('orders')
+        .update({ photo_bin: photoFileId })
+        .eq('id', orderId);
+
       temp.photo_at_bin_received = true;
       await updateUserState(userId, 'provider_ready_to_complete', temp);
       return await sendMessage(
@@ -1160,6 +1384,24 @@ async function handleTextMessage(message: TelegramMessage) {
   }
 
   switch (userState.state) {
+    case 'awaiting_provider_city':
+      if (text.length < 2) {
+        await sendMessage(chatId, '❌ Название города слишком короткое. Попробуйте ещё раз.');
+        return;
+      }
+      await supabase.from('tg_user_profile').upsert({ 
+        user_id: userId, 
+        city: text,
+        role: 'performer'
+      });
+      await updateUserState(userId, 'start', {});
+      await sendMessage(
+        chatId,
+        `✅ Отлично! Город "${text}" сохранён.\n\n📍 Изменить город можно в настройках.\n\n🔔 Теперь вы будете получать уведомления о новых заказах в вашем городе согласно вашего графика работы.`,
+        getProviderMainMenuKeyboard()
+      );
+      return;
+
     case 'awaiting_city':
       if (text.length < 2) { await sendMessage(chatId, '❌ Название города слишком короткое.', { inline_keyboard: [getBackHomeRow()] }); return; }
       temp.city = text;
@@ -1207,6 +1449,10 @@ async function handleTextMessage(message: TelegramMessage) {
     case 'awaiting_photo_at_door':
     case 'awaiting_photo_at_bin':
       await sendMessage(chatId, '📸 Пожалуйста, пришлите фото (не текст).');
+      return;
+    
+    case 'awaiting_check_completion':
+      await sendMessage(chatId, '📋 Пожалуйста, используйте кнопки для проверки выполнения заказа.');
       return;
 
     case 'awaiting_manual_days':

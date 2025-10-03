@@ -26,6 +26,8 @@ export type Database = {
           id: string
           last_name: string | null
           performer_id: number | null
+          photo_bin: string | null
+          photo_door: string | null
           size_option: string
           status: string
           time_option: string
@@ -44,6 +46,8 @@ export type Database = {
           id?: string
           last_name?: string | null
           performer_id?: number | null
+          photo_bin?: string | null
+          photo_door?: string | null
           size_option: string
           status?: string
           time_option: string
@@ -62,6 +66,8 @@ export type Database = {
           id?: string
           last_name?: string | null
           performer_id?: number | null
+          photo_bin?: string | null
+          photo_door?: string | null
           size_option?: string
           status?: string
           time_option?: string
@@ -88,6 +94,7 @@ export type Database = {
       }
       tg_user_profile: {
         Row: {
+          city: string | null
           created_at: string
           eco_points: number
           role: string | null
@@ -96,6 +103,7 @@ export type Database = {
           user_id: number
         }
         Insert: {
+          city?: string | null
           created_at?: string
           eco_points?: number
           role?: string | null
@@ -104,6 +112,7 @@ export type Database = {
           user_id: number
         }
         Update: {
+          city?: string | null
           created_at?: string
           eco_points?: number
           role?: string | null

@@ -574,16 +574,229 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
           inline_keyboard: [
             [{ text: '🌆 Изменить город', callback_data: 'provider_change_city' }],
             [{ text: '⏰ График работы', callback_data: 'provider_schedule' }],
-            [{ text: '🔔 Уведомления', callback_data: 'provider_notifications' }],
             [{ text: '🔙 Назад', callback_data: 'provider_main_menu' }]
           ]
         }
       );
 
     case 'provider_change_city':
-    case 'provider_schedule':
-    case 'provider_notifications':
       return await sendMessage(chatId, '⚙️ Эта функция скоро будет доступна!', getProviderMainMenuKeyboard());
+
+    case 'provider_schedule':
+      return await sendMessage(
+        chatId,
+        '⏰ Настраиваем твой рабочий ритм\n\nХочешь быть в строю всегда или по расписанию?\n\n👉 Выбери вариант:',
+        {
+          inline_keyboard: [
+            [{ text: '🌍 Всегда на связи (принимать заказы 24/7)', callback_data: 'schedule_always' }],
+            [{ text: '📅 Задать свой график', callback_data: 'schedule_custom' }],
+            [{ text: '🔙 Назад', callback_data: 'provider_settings' }]
+          ]
+        }
+      );
+
+    case 'schedule_always':
+      return await sendMessage(
+        chatId,
+        'Супер! Ты теперь железный герой 💪\n\nБудешь получать все заказы в любое время суток.\n\n👉 Хочешь фильтровать уведомления или брать всё подряд?',
+        {
+          inline_keyboard: [
+            [{ text: '🔔 Все заказы', callback_data: 'filter_all' }],
+            [{ text: '⚡ Только срочные', callback_data: 'filter_urgent' }],
+            [{ text: '📦 Только крупные (2+ пакета)', callback_data: 'filter_large' }],
+            [{ text: '🔙 Назад', callback_data: 'provider_schedule' }]
+          ]
+        }
+      );
+
+    case 'schedule_custom':
+      return await sendMessage(
+        chatId,
+        'Отлично, давай настроим твой график 📅\n\n📍 Сначала выбери дни:',
+        {
+          inline_keyboard: [
+            [{ text: 'Каждый день', callback_data: 'days_everyday' }],
+            [{ text: 'Только будни (пн–пт)', callback_data: 'days_weekdays' }],
+            [{ text: 'Только выходные (сб–вс)', callback_data: 'days_weekend' }],
+            [{ text: 'Указать вручную', callback_data: 'days_manual' }],
+            [{ text: '🔙 Назад', callback_data: 'provider_schedule' }]
+          ]
+        }
+      );
+
+    case 'days_everyday':
+      temp.schedule_days = 'everyday';
+      await updateUserState(userId, userState.state, temp);
+      return await sendMessage(
+        chatId,
+        'Теперь время работы:',
+        {
+          inline_keyboard: [
+            [{ text: '⏰ С 09:00 до 18:00', callback_data: 'time_9_18' }],
+            [{ text: '⏰ С 10:00 до 20:00', callback_data: 'time_10_20' }],
+            [{ text: 'Указать своё', callback_data: 'time_custom_input' }],
+            [{ text: '🔙 Назад', callback_data: 'schedule_custom' }]
+          ]
+        }
+      );
+
+    case 'days_weekdays':
+      temp.schedule_days = 'weekdays';
+      await updateUserState(userId, userState.state, temp);
+      return await sendMessage(
+        chatId,
+        'Теперь время работы:',
+        {
+          inline_keyboard: [
+            [{ text: '⏰ С 09:00 до 18:00', callback_data: 'time_9_18' }],
+            [{ text: '⏰ С 10:00 до 20:00', callback_data: 'time_10_20' }],
+            [{ text: 'Указать своё', callback_data: 'time_custom_input' }],
+            [{ text: '🔙 Назад', callback_data: 'schedule_custom' }]
+          ]
+        }
+      );
+
+    case 'days_weekend':
+      temp.schedule_days = 'weekend';
+      await updateUserState(userId, userState.state, temp);
+      return await sendMessage(
+        chatId,
+        'Теперь время работы:',
+        {
+          inline_keyboard: [
+            [{ text: '⏰ С 09:00 до 18:00', callback_data: 'time_9_18' }],
+            [{ text: '⏰ С 10:00 до 20:00', callback_data: 'time_10_20' }],
+            [{ text: 'Указать своё', callback_data: 'time_custom_input' }],
+            [{ text: '🔙 Назад', callback_data: 'schedule_custom' }]
+          ]
+        }
+      );
+
+    case 'days_manual':
+      await updateUserState(userId, 'awaiting_manual_days', temp);
+      return await sendMessage(
+        chatId,
+        '📅 Укажите дни работы через запятую (например: пн, ср, пт):',
+        {
+          inline_keyboard: [
+            [{ text: '🔙 Назад', callback_data: 'schedule_custom' }]
+          ]
+        }
+      );
+
+    case 'time_9_18':
+      temp.schedule_time = '09:00-18:00';
+      await updateUserState(userId, userState.state, temp);
+      return await sendMessage(
+        chatId,
+        `Окей, график установлен! 🎯\n\nТы в строю: ${temp.schedule_days === 'everyday' ? 'каждый день' : temp.schedule_days === 'weekdays' ? 'пн–пт' : temp.schedule_days === 'weekend' ? 'сб–вс' : temp.schedule_days}, с 09:00 до 18:00\n\nТеперь давай уточним уведомления.\n\n👉 Что слать тебе в рабочее время?`,
+        {
+          inline_keyboard: [
+            [{ text: '🔔 Все новые заказы', callback_data: 'filter_all' }],
+            [{ text: '⚡ Только срочные', callback_data: 'filter_urgent' }],
+            [{ text: '📦 Только крупные', callback_data: 'filter_large' }],
+            [{ text: '🔕 Ничего, сам буду заходить и смотреть', callback_data: 'filter_none' }],
+            [{ text: '🔙 Назад', callback_data: 'schedule_custom' }]
+          ]
+        }
+      );
+
+    case 'time_10_20':
+      temp.schedule_time = '10:00-20:00';
+      await updateUserState(userId, userState.state, temp);
+      return await sendMessage(
+        chatId,
+        `Окей, график установлен! 🎯\n\nТы в строю: ${temp.schedule_days === 'everyday' ? 'каждый день' : temp.schedule_days === 'weekdays' ? 'пн–пт' : temp.schedule_days === 'weekend' ? 'сб–вс' : temp.schedule_days}, с 10:00 до 20:00\n\nТеперь давай уточним уведомления.\n\n👉 Что слать тебе в рабочее время?`,
+        {
+          inline_keyboard: [
+            [{ text: '🔔 Все новые заказы', callback_data: 'filter_all' }],
+            [{ text: '⚡ Только срочные', callback_data: 'filter_urgent' }],
+            [{ text: '📦 Только крупные', callback_data: 'filter_large' }],
+            [{ text: '🔕 Ничего, сам буду заходить и смотреть', callback_data: 'filter_none' }],
+            [{ text: '🔙 Назад', callback_data: 'schedule_custom' }]
+          ]
+        }
+      );
+
+    case 'time_custom_input':
+      await updateUserState(userId, 'awaiting_custom_time_start', temp);
+      return await sendMessage(
+        chatId,
+        '⏰ С какого времени начинаешь? (например: 08:00)',
+        {
+          inline_keyboard: [
+            [{ text: '🔙 Назад', callback_data: 'schedule_custom' }]
+          ]
+        }
+      );
+
+    case 'filter_all':
+      temp.notification_filter = 'all';
+      await supabase.from('tg_user_profile').upsert({
+        user_id: userId,
+        data: {
+          schedule_days: temp.schedule_days,
+          schedule_time: temp.schedule_time,
+          notification_filter: 'all'
+        }
+      });
+      await updateUserState(userId, 'start', {});
+      return await sendMessage(
+        chatId,
+        `Готово! ✅\n\nТвой график: ${temp.schedule_days === 'everyday' ? 'каждый день' : temp.schedule_days === 'weekdays' ? 'пн–пт' : temp.schedule_days === 'weekend' ? 'сб–вс' : temp.schedule_days || 'всегда на связи'}, ${temp.schedule_time || 'круглосуточно'}\nУведомления: все новые заказы\n\n🚀 Теперь система сама будет подбирать тебе заказы по этому расписанию.`,
+        getProviderMainMenuKeyboard()
+      );
+
+    case 'filter_urgent':
+      temp.notification_filter = 'urgent';
+      await supabase.from('tg_user_profile').upsert({
+        user_id: userId,
+        data: {
+          schedule_days: temp.schedule_days,
+          schedule_time: temp.schedule_time,
+          notification_filter: 'urgent'
+        }
+      });
+      await updateUserState(userId, 'start', {});
+      return await sendMessage(
+        chatId,
+        `Готово! ✅\n\nТвой график: ${temp.schedule_days === 'everyday' ? 'каждый день' : temp.schedule_days === 'weekdays' ? 'пн–пт' : temp.schedule_days === 'weekend' ? 'сб–вс' : temp.schedule_days || 'всегда на связи'}, ${temp.schedule_time || 'круглосуточно'}\nУведомления: только срочные заказы\n\n🚀 Теперь система сама будет подбирать тебе заказы по этому расписанию.`,
+        getProviderMainMenuKeyboard()
+      );
+
+    case 'filter_large':
+      temp.notification_filter = 'large';
+      await supabase.from('tg_user_profile').upsert({
+        user_id: userId,
+        data: {
+          schedule_days: temp.schedule_days,
+          schedule_time: temp.schedule_time,
+          notification_filter: 'large'
+        }
+      });
+      await updateUserState(userId, 'start', {});
+      return await sendMessage(
+        chatId,
+        `Готово! ✅\n\nТвой график: ${temp.schedule_days === 'everyday' ? 'каждый день' : temp.schedule_days === 'weekdays' ? 'пн–пт' : temp.schedule_days === 'weekend' ? 'сб–вс' : temp.schedule_days || 'всегда на связи'}, ${temp.schedule_time || 'круглосуточно'}\nУведомления: только крупные заказы (2+ пакета)\n\n🚀 Теперь система сама будет подбирать тебе заказы по этому расписанию.`,
+        getProviderMainMenuKeyboard()
+      );
+
+    case 'filter_none':
+      temp.notification_filter = 'none';
+      await supabase.from('tg_user_profile').upsert({
+        user_id: userId,
+        data: {
+          schedule_days: temp.schedule_days,
+          schedule_time: temp.schedule_time,
+          notification_filter: 'none'
+        }
+      });
+      await updateUserState(userId, 'start', {});
+      return await sendMessage(
+        chatId,
+        `Готово! ✅\n\nТвой график: ${temp.schedule_days === 'everyday' ? 'каждый день' : temp.schedule_days === 'weekdays' ? 'пн–пт' : temp.schedule_days === 'weekend' ? 'сб–вс' : temp.schedule_days || 'всегда на связи'}, ${temp.schedule_time || 'круглосуточно'}\nУведомления: отключены\n\n🚀 Теперь система сама будет подбирать тебе заказы по этому расписанию.`,
+        getProviderMainMenuKeyboard()
+      );
 
     case 'cancel':
       await updateUserState(userId, 'start', {});
@@ -994,6 +1207,55 @@ async function handleTextMessage(message: TelegramMessage) {
     case 'awaiting_photo_at_door':
     case 'awaiting_photo_at_bin':
       await sendMessage(chatId, '📸 Пожалуйста, пришлите фото (не текст).');
+      return;
+
+    case 'awaiting_manual_days':
+      temp.schedule_days = text;
+      await updateUserState(userId, userState.state, temp);
+      await sendMessage(
+        chatId,
+        'Теперь время работы:',
+        {
+          inline_keyboard: [
+            [{ text: '⏰ С 09:00 до 18:00', callback_data: 'time_9_18' }],
+            [{ text: '⏰ С 10:00 до 20:00', callback_data: 'time_10_20' }],
+            [{ text: 'Указать своё', callback_data: 'time_custom_input' }],
+            [{ text: '🔙 Назад', callback_data: 'schedule_custom' }]
+          ]
+        }
+      );
+      return;
+
+    case 'awaiting_custom_time_start':
+      temp.schedule_time_start = text;
+      await updateUserState(userId, 'awaiting_custom_time_end', temp);
+      await sendMessage(
+        chatId,
+        '⏰ До какого времени работаешь? (например: 18:00)',
+        {
+          inline_keyboard: [
+            [{ text: '🔙 Назад', callback_data: 'schedule_custom' }]
+          ]
+        }
+      );
+      return;
+
+    case 'awaiting_custom_time_end':
+      temp.schedule_time = `${temp.schedule_time_start}-${text}`;
+      await updateUserState(userId, userState.state, temp);
+      await sendMessage(
+        chatId,
+        `Окей, график установлен! 🎯\n\nТы в строю: ${temp.schedule_days === 'everyday' ? 'каждый день' : temp.schedule_days === 'weekdays' ? 'пн–пт' : temp.schedule_days === 'weekend' ? 'сб–вс' : temp.schedule_days}, с ${temp.schedule_time}\n\nТеперь давай уточним уведомления.\n\n👉 Что слать тебе в рабочее время?`,
+        {
+          inline_keyboard: [
+            [{ text: '🔔 Все новые заказы', callback_data: 'filter_all' }],
+            [{ text: '⚡ Только срочные', callback_data: 'filter_urgent' }],
+            [{ text: '📦 Только крупные', callback_data: 'filter_large' }],
+            [{ text: '🔕 Ничего, сам буду заходить и смотреть', callback_data: 'filter_none' }],
+            [{ text: '🔙 Назад', callback_data: 'schedule_custom' }]
+          ]
+        }
+      );
       return;
 
     case 'awaiting_custom_time': // совместимость со старым сценарием

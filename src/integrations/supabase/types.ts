@@ -14,6 +14,24 @@ export type Database = {
   }
   public: {
     Tables: {
+      bot_settings: {
+        Row: {
+          key: string
+          updated_at: string | null
+          value: string
+        }
+        Insert: {
+          key: string
+          updated_at?: string | null
+          value: string
+        }
+        Update: {
+          key?: string
+          updated_at?: string | null
+          value?: string
+        }
+        Relationships: []
+      }
       orders: {
         Row: {
           address: string
@@ -28,6 +46,7 @@ export type Database = {
           performer_id: number | null
           photo_bin: string | null
           photo_door: string | null
+          rating: number | null
           size_option: string
           status: string
           time_option: string
@@ -48,6 +67,7 @@ export type Database = {
           performer_id?: number | null
           photo_bin?: string | null
           photo_door?: string | null
+          rating?: number | null
           size_option: string
           status?: string
           time_option: string
@@ -68,6 +88,7 @@ export type Database = {
           performer_id?: number | null
           photo_bin?: string | null
           photo_door?: string | null
+          rating?: number | null
           size_option?: string
           status?: string
           time_option?: string
@@ -94,10 +115,12 @@ export type Database = {
       }
       tg_user_profile: {
         Row: {
+          average_rating: number | null
           city: string | null
           created_at: string
           eco_points: number
           notification_filter: string | null
+          rating_count: number | null
           role: string | null
           saved_address: string | null
           schedule_days: string | null
@@ -106,10 +129,12 @@ export type Database = {
           user_id: number
         }
         Insert: {
+          average_rating?: number | null
           city?: string | null
           created_at?: string
           eco_points?: number
           notification_filter?: string | null
+          rating_count?: number | null
           role?: string | null
           saved_address?: string | null
           schedule_days?: string | null
@@ -118,10 +143,12 @@ export type Database = {
           user_id: number
         }
         Update: {
+          average_rating?: number | null
           city?: string | null
           created_at?: string
           eco_points?: number
           notification_filter?: string | null
+          rating_count?: number | null
           role?: string | null
           saved_address?: string | null
           schedule_days?: string | null

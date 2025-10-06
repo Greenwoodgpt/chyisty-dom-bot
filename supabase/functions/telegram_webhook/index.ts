@@ -256,6 +256,32 @@ async function handleStart(message: TelegramMessage) {
   await sendMessage(message.chat.id, text, getRoleKeyboard());
 }
 
+async function handleAdminId(message: TelegramMessage) {
+  const chatId = message.chat.id;
+  const text = message.text || '';
+  const parts = text.split(' ');
+  
+  if (parts.length < 2) {
+    await sendMessage(chatId, '❌ Укажите ID администратора.\nИспользование: /adminid 123456789');
+    return;
+  }
+  
+  const adminId = parts[1];
+  
+  // Save admin ID to bot_settings
+  const { error } = await supabase
+    .from('bot_settings')
+    .upsert({ key: 'admin_chat_id', value: adminId, updated_at: new Date().toISOString() });
+  
+  if (error) {
+    console.error('Error saving admin ID:', error);
+    await sendMessage(chatId, '❌ Ошибка при сохранении ID администратора.');
+    return;
+  }
+  
+  await sendMessage(chatId, `✅ ID администратора успешно установлен: ${adminId}`);
+}
+
 async function handleHelp(message: TelegramMessage) {
   const helpText = `
 ❓ <b>Помощь</b>
@@ -361,7 +387,29 @@ async function notifyProviders(order: any) {
   }
 }
 
+async function getAdminChatId(): Promise<string | null> {
+  // Try to get from bot_settings first
+  const { data, error } = await supabase
+    .from('bot_settings')
+    .select('value')
+    .eq('key', 'admin_chat_id')
+    .maybeSingle();
+  
+  if (!error && data?.value) {
+    return data.value;
+  }
+  
+  // Fallback to environment variable
+  return Deno.env.get('TELEGRAM_ADMIN_CHAT_ID') || null;
+}
+
 async function notifyAdmin(order: any) {
+  const adminChatId = await getAdminChatId();
+  if (!adminChatId) {
+    console.log('Admin chat ID not configured');
+    return;
+  }
+  
   const sizeNames: { [key: string]: string } = { 'one_bag': 'Один пакет (до 6 кг)', 'two_bags': 'Два пакета', 'three_bags': 'Три пакета' };
   const timeNames: { [key: string]: string } = { 'within_hour': 'В течение часа', 'custom': 'Указанное время' };
   const bagsText = order.bags ? `\n🛍️ Пакеты: ${order.bags.join(', ')}` : '';
@@ -379,7 +427,7 @@ async function notifyAdmin(order: any) {
 ${commentText}
 
 📅 <b>Дата заказа:</b> ${new Date(order.created_at).toLocaleString('ru-RU')}`;
-  await sendMessage(parseInt(TELEGRAM_ADMIN_CHAT_ID), adminText);
+  await sendMessage(parseInt(adminChatId), adminText);
 }
 
 async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
@@ -1190,14 +1238,30 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
             await sendPhoto(chatId, order.photo_bin, '📷 Фото мусорного пакета у мусорки');
           }
           
+          // Проверяем, есть ли уже оценка
+          if (order.rating) {
+            const stars = '⭐'.repeat(order.rating);
+            return await sendMessage(
+              chatId,
+              `${stars} Вы уже оценили этот заказ: ${order.rating}/5\n\nЕсли у вас есть вопросы или замечания:`,
+              {
+                inline_keyboard: [
+                  [{ text: '📞 НАПИСАТЬ В ПОДДЕРЖКУ', callback_data: `support_${orderId}` }]
+                ]
+              }
+            );
+          }
+          
           return await sendMessage(
             chatId, 
             'Заказ выполнен качественно? 🌟',
             {
               inline_keyboard: [
-                [{ text: '⭐⭐⭐⭐⭐ Отлично!', callback_data: `rate_5_${orderId}` }],
-                [{ text: '⭐⭐⭐ Хорошо', callback_data: `rate_3_${orderId}` }],
-                [{ text: '⭐ Плохо', callback_data: `rate_1_${orderId}` }]
+                [{ text: '⭐', callback_data: `rate_${orderId}_1` }],
+                [{ text: '⭐⭐', callback_data: `rate_${orderId}_2` }],
+                [{ text: '⭐⭐⭐', callback_data: `rate_${orderId}_3` }],
+                [{ text: '⭐⭐⭐⭐', callback_data: `rate_${orderId}_4` }],
+                [{ text: '⭐⭐⭐⭐⭐', callback_data: `rate_${orderId}_5` }]
               ]
             }
           );
@@ -1212,15 +1276,67 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
       // Оценка заказа
       if (data.startsWith('rate_')) {
         const parts = data.split('_');
-        const rating = parts[1];
-        const orderId = parts.slice(2).join('_');
+        const orderId = parts[1];
+        const rating = parseInt(parts[2]);
         
-        // TODO: сохранить рейтинг в БД
+        // Получаем данные заказа
+        const { data: order } = await supabase
+          .from('orders')
+          .select('*')
+          .eq('id', orderId)
+          .single();
+
+        if (!order) {
+          return await sendMessage(chatId, '❌ Заказ не найден.');
+        }
+
+        // Сохраняем рейтинг заказа
+        await supabase
+          .from('orders')
+          .update({ rating })
+          .eq('id', orderId);
+
+        // Обновляем средний рейтинг исполнителя
+        if (order.performer_id) {
+          const { data: profile } = await supabase
+            .from('tg_user_profile')
+            .select('average_rating, rating_count')
+            .eq('user_id', order.performer_id)
+            .maybeSingle();
+
+          const currentRating = profile?.average_rating || 0;
+          const currentCount = profile?.rating_count || 0;
+          const newCount = currentCount + 1;
+          const newRating = ((currentRating * currentCount) + rating) / newCount;
+
+          await supabase
+            .from('tg_user_profile')
+            .upsert({
+              user_id: order.performer_id,
+              average_rating: Number(newRating.toFixed(2)),
+              rating_count: newCount,
+              updated_at: new Date().toISOString()
+            });
+        }
         
+        const stars = '⭐'.repeat(rating);
         return await sendMessage(
           chatId,
-          `⭐ Спасибо за оценку!\n\nВаше мнение помогает нам становиться лучше. 🙏`
+          `${stars} Спасибо за вашу оценку!\n\nВаше мнение помогает нам становиться лучше. 🙏\n\nЕсли у вас есть вопросы или замечания:`,
+          {
+            inline_keyboard: [
+              [{ text: '📞 НАПИСАТЬ В ПОДДЕРЖКУ', callback_data: `support_${orderId}` }]
+            ]
+          }
         );
+      }
+
+      // Обращение в поддержку
+      if (data.startsWith('support_')) {
+        const orderId = data.replace('support_', '');
+        temp.support_order_id = orderId;
+        await updateUserState(userId, 'awaiting_support_message', temp);
+        return await sendMessage(chatId, '✍️ Напишите ваше сообщение для поддержки:');
       }
 
       // Запрос фото для завершения заказа
@@ -1504,6 +1620,46 @@ async function handleTextMessage(message: TelegramMessage) {
       );
       return;
 
+    case 'awaiting_support_message': {
+      const orderId = temp.support_order_id;
+      
+      if (!orderId || !text) {
+        await sendMessage(chatId, '❌ Ошибка при отправке сообщения.');
+        return;
+      }
+
+      // Получаем детали заказа
+      const { data: order } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('id', orderId)
+        .single();
+
+      if (!order) {
+        await sendMessage(chatId, '❌ Заказ не найден.');
+        return;
+      }
+
+      // Отправляем сообщение администратору
+      const adminChatId = await getAdminChatId();
+      if (adminChatId) {
+        const adminMessage = `📞 <b>ОБРАЩЕНИЕ В ПОДДЕРЖКУ</b>\n\n` +
+          `👤 От: ${message.from.first_name}${message.from.last_name ? ' ' + message.from.last_name : ''}` +
+          `${message.from.username ? ` (@${message.from.username})` : ''}\n` +
+          `📦 Заказ ID: ${orderId.slice(-8)}\n` +
+          `📍 Адрес: ${order.address}\n` +
+          `📅 Дата заказа: ${new Date(order.created_at).toLocaleDateString('ru-RU')}\n` +
+          `⭐ Оценка: ${order.rating ? order.rating + '/5' : 'не оценен'}\n\n` +
+          `💬 Сообщение:\n${text}`;
+
+        await sendMessage(parseInt(adminChatId), adminMessage);
+      }
+
+      await updateUserState(userId, 'start', {});
+      await sendMessage(chatId, '✅ Ваше сообщение отправлено в поддержку. Мы свяжемся с вами в ближайшее время.', getMainMenuKeyboard());
+      return;
+    }
+
     case 'awaiting_custom_time': // совместимость со старым сценарием
       const tempDataCustomTime = { ...temp, custom_time: text };
       await updateUserState(userId, 'awaiting_confirmation', tempDataCustomTime);
@@ -1524,9 +1680,10 @@ serve(async (req) => {
     const update: TelegramUpdate = await req.json();
     if (update.message) {
       const message = update.message;
-      if (message.text?.startsWith('/start'))      await handleStart(message);
-      else if (message.text?.startsWith('/help')) await handleHelp(message);
-      else if (message.text || message.photo)     await handleTextMessage(message);
+      if (message.text?.startsWith('/start'))        await handleStart(message);
+      else if (message.text?.startsWith('/help'))   await handleHelp(message);
+      else if (message.text?.startsWith('/adminid')) await handleAdminId(message);
+      else if (message.text || message.photo)       await handleTextMessage(message);
     } else if (update && update.callback_query) {
       await handleCallbackQuery(update.callback_query);
     }

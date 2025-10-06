@@ -97,8 +97,11 @@ export type Database = {
           city: string | null
           created_at: string
           eco_points: number
+          notification_filter: string | null
           role: string | null
           saved_address: string | null
+          schedule_days: string | null
+          schedule_time: string | null
           updated_at: string
           user_id: number
         }
@@ -106,8 +109,11 @@ export type Database = {
           city?: string | null
           created_at?: string
           eco_points?: number
+          notification_filter?: string | null
           role?: string | null
           saved_address?: string | null
+          schedule_days?: string | null
+          schedule_time?: string | null
           updated_at?: string
           user_id: number
         }
@@ -115,8 +121,11 @@ export type Database = {
           city?: string | null
           created_at?: string
           eco_points?: number
+          notification_filter?: string | null
           role?: string | null
           saved_address?: string | null
+          schedule_days?: string | null
+          schedule_time?: string | null
           updated_at?: string
           user_id?: number
         }

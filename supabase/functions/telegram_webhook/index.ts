@@ -1054,16 +1054,9 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
       await updateUserState(userId, 'awaiting_custom_amount', temp);
       return await sendMessage(chatId, 'Введите желаемую сумму в рублях (не меньше 100):', { inline_keyboard: [getBackHomeRow()] });
     case 'pay_now': {
-      const order = await saveOrder(userId, chatId, callbackQuery.from, temp, 'new');
-      if (order) {
-        temp.order_id = order.id;
-        await updateUserState(userId, 'awaiting_comment_choice', temp);
-        await sendMessage(chatId, '✅ Ваш заказ оплачен и принят! Хотите добавить комментарий для курьера?', getCommentChoiceKeyboard());
-        await notifyAdmin(order);
-        await notifyProviders(order);
-      } else {
-        await sendMessage(chatId, '❌ Произошла ошибка при создании заказа. Попробуйте еще раз.');
-      }
+      // Сохраняем данные заказа во временные данные, но не создаем заказ
+      await updateUserState(userId, 'awaiting_comment_choice', temp);
+      await sendMessage(chatId, '✅ Оплата готова! Хотите добавить комментарий для курьера?', getCommentChoiceKeyboard());
       return;
     }
 
@@ -1071,9 +1064,19 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
     case 'comment_yes':
       await updateUserState(userId, 'awaiting_comment_text', temp);
       return await sendMessage(chatId, 'Напишите комментарий (например: «Забрать с порога», «Позвонить в домофон»):', { inline_keyboard: [getBackHomeRow()] });
-    case 'comment_no':
-      await updateUserState(userId, 'start', {});
-      return await sendMessage(chatId, '✅ Ваш заказ принят! Курьер скоро приедет и аккуратно вынесет ваш мусор. Спасибо, что выбираете Мусоробота 🤖✨\n\nВы можете оформить 🏠 Новый заказ командой /start.');
+    case 'comment_no': {
+      // Создаем заказ только после отказа от комментария
+      const order = await saveOrder(userId, chatId, callbackQuery.from, temp, 'new');
+      if (order) {
+        await updateUserState(userId, 'start', {});
+        await sendMessage(chatId, '✅ Ваш заказ принят! Курьер скоро приедет и аккуратно вынесет ваш мусор. Спасибо, что выбираете Мусоробота 🤖✨\n\nВы можете оформить 🏠 Новый заказ командой /start.');
+        await notifyAdmin(order);
+        await notifyProviders(order);
+      } else {
+        await sendMessage(chatId, '❌ Произошла ошибка при создании заказа. Попробуйте еще раз.');
+      }
+      return;
+    }
 
     // Исполнитель: взятие заказа
     default:
@@ -1625,14 +1628,20 @@ async function handleTextMessage(message: TelegramMessage) {
     }
 
     case 'awaiting_comment_text': {
-      if (!temp.order_id) {
-        await sendMessage(chatId, '⚠️ Не найден активный заказ. Начните заново: /start');
+      // Добавляем комментарий во временные данные
+      temp.comment = text;
+      
+      // Создаем заказ после добавления комментария
+      const order = await saveOrder(userId, chatId, message.from, temp, 'new');
+      
+      if (order) {
         await updateUserState(userId, 'start', {});
-        return;
+        await sendMessage(chatId, '✅ Комментарий добавлен!\n\nВаш заказ принят! Курьер скоро приедет и аккуратно вынесет ваш мусор. Спасибо, что выбираете Мусоробота 🤖✨');
+        await notifyAdmin(order);
+        await notifyProviders(order);
+      } else {
+        await sendMessage(chatId, '❌ Произошла ошибка при создании заказа. Попробуйте еще раз.');
       }
-      await supabase.from('orders').update({ comment: text }).eq('id', temp.order_id);
-      await updateUserState(userId, 'start', {});
-      await sendMessage(chatId, '✅ Комментарий добавлен!\n\nВаш заказ принят! Курьер скоро приедет и аккуратно вынесет ваш мусор. Спасибо, что выбираете Мусоробота 🤖✨');
       return;
     }
 

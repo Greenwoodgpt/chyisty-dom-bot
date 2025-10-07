@@ -463,6 +463,10 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
     await updateUserState(userId, 'awaiting_time_choice', temp);
     await sendMessage(chatId, '⏰ Когда вынести мусор?', getTimeChoiceKeyboard());
   };
+  const showAskTime = async () => {
+    await updateUserState(userId, 'awaiting_time_choice', temp);
+    await sendMessage(chatId, '⏰ Когда вынести мусор?', getTimeChoiceKeyboard());
+  };
   const showTimeSlots = async () => {
     await updateUserState(userId, 'awaiting_time_slot', temp);
     await sendMessage(chatId, 'Выберите удобный интервал или введите своё время:', getTimeSlotsKeyboard());

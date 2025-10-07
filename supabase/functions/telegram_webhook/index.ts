@@ -626,9 +626,10 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
         const bagsText = bags.length > 0 ? bags.join(', ') : (order.amount / 100) + '₽';
         message += `${index + 1}. 🏠 ${order.address}\n`;
         message += `   📦 ${bagsText}\n`;
+        message += `   💰 ${order.amount / 100}₽\n`;
         message += `   ⏰ ${order.time_option === 'within_hour' ? 'Срочно' : order.custom_time || 'По согласованию'}\n\n`;
         
-        keyboard.push([{ text: `⚡ Взять заказ #${index + 1}`, callback_data: `provider_take_${order.id}` }]);
+        keyboard.push([{ text: `👁 Посмотреть заказ #${index + 1}`, callback_data: `provider_view_${order.id}` }]);
       });
 
       keyboard.push([{ text: '🔙 Назад', callback_data: 'provider_main_menu' }]);
@@ -1076,6 +1077,55 @@ async function handleCallbackQuery(callbackQuery: TelegramCallbackQuery) {
         await sendMessage(chatId, '❌ Произошла ошибка при создании заказа. Попробуйте еще раз.');
       }
       return;
+    }
+
+    // Исполнитель: просмотр заказа
+    case data.startsWith('provider_view_') && data: {
+      const orderId = data.replace('provider_view_', '');
+      
+      const { data: order } = await supabase
+        .from('orders')
+        .select('*')
+        .eq('id', orderId)
+        .single();
+
+      if (!order) {
+        return await sendMessage(chatId, '❌ Заказ не найден.', getProviderMainMenuKeyboard());
+      }
+
+      if (order.status !== 'new') {
+        return await sendMessage(chatId, '❌ Этот заказ уже взят другим исполнителем.', getProviderMainMenuKeyboard());
+      }
+
+      const bags = order.bags || [];
+      const bagsText = bags.length > 0 ? bags.join(', ') : 'Стандартный пакет';
+      const timeText = order.time_option === 'within_hour' ? '⏱ В течение часа (срочно!)' : 
+                      order.time_option === 'today' ? '📅 Сегодня' :
+                      order.time_option === 'tomorrow' ? '📅 Завтра' :
+                      order.custom_time ? `🕐 ${order.custom_time}` : '📅 По согласованию';
+
+      let message = `📋 Детали заказа:\n\n`;
+      message += `🏠 Адрес: ${order.address}\n`;
+      message += `📦 Мусор: ${bagsText}\n`;
+      message += `💰 Сумма: ${order.amount / 100}₽\n`;
+      message += `⏰ Время: ${timeText}\n`;
+      if (order.comment) {
+        message += `💬 Комментарий: ${order.comment}\n`;
+      }
+      message += `\n🕐 Создан: ${new Date(order.created_at).toLocaleString('ru-RU')}\n`;
+      message += `\n✅ Взять этот заказ?`;
+
+      return await sendMessage(
+        chatId,
+        message,
+        {
+          inline_keyboard: [
+            [{ text: '⚡ Взять заказ', callback_data: `provider_take_${orderId}` }],
+            [{ text: '🔙 К списку заказов', callback_data: 'provider_new_orders' }],
+            [{ text: '🏠 Главное меню', callback_data: 'provider_main_menu' }]
+          ]
+        }
+      );
     }
 
     // Исполнитель: взятие заказа

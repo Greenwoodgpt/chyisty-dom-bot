@@ -64,11 +64,27 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? ''
 );
 
+// Persistent keyboard for role selection
+function getMainRoleKeyboard() {
+  return {
+    keyboard: [
+      [{ text: '👤 Я заказчик' }, { text: '🔧 Я исполнитель' }]
+    ],
+    resize_keyboard: true,
+    persistent: true
+  };
+}
+
 async function sendMessage(chatId: number, text: string, replyMarkup?: any) {
   const response = await fetch(`${TELEGRAM_API_URL}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text, reply_markup: replyMarkup, parse_mode: 'HTML' })
+    body: JSON.stringify({ 
+      chat_id: chatId, 
+      text, 
+      reply_markup: replyMarkup || getMainRoleKeyboard(), 
+      parse_mode: 'HTML' 
+    })
   });
   const bodyText = await response.text();
   if (!response.ok) {
@@ -1452,6 +1468,60 @@ async function handleTextMessage(message: TelegramMessage) {
   const text = message.text?.trim() || '';
   const userState = await getUserState(userId);
   const temp = { ...(userState.data || {}) };
+
+  // Handle role selection buttons
+  if (text === '👤 Я заказчик') {
+    await supabase.from('tg_user_profile').upsert({ user_id: userId, role: 'customer' });
+    
+    // Check if user has saved address and not currently in address input
+    const { data: profile } = await supabase
+      .from('tg_user_profile')
+      .select('saved_address')
+      .eq('user_id', userId)
+      .single();
+
+    if (profile?.saved_address && userState.state !== 'awaiting_address' && userState.state !== 'awaiting_city') {
+      temp.saved_address_available = profile.saved_address;
+      await updateUserState(userId, 'choose_address_option', temp);
+      return await sendMessage(
+        chatId,
+        '📍 У вас есть сохранённый адрес:\n\n' + profile.saved_address + '\n\nИспользовать его?',
+        {
+          inline_keyboard: [
+            [{ text: '✅ Да, использовать', callback_data: 'use_saved_address' }],
+            [{ text: '🏠 Ввести новый адрес', callback_data: 'enter_new_address' }]
+          ]
+        }
+      );
+    } else if (userState.state === 'awaiting_address' || userState.state === 'awaiting_city') {
+      // Continue with existing order creation
+      return await sendMessage(chatId, 'Продолжаем создание заказа.');
+    } else {
+      await updateUserState(userId, 'customer_greeting', temp);
+      return await sendMessage(chatId, '👋 Привет! Я — Мусоробот 🤖. Готов помочь вам цивилизованно избавиться от мусора. Начнём заказ?', getStartOrderKeyboard());
+    }
+  }
+
+  if (text === '🔧 Я исполнитель') {
+    const { data: profile } = await supabase
+      .from('tg_user_profile')
+      .select('city')
+      .eq('user_id', userId)
+      .single();
+    
+    if (!profile?.city) {
+      await supabase.from('tg_user_profile').upsert({ user_id: userId, role: 'performer' });
+      await updateUserState(userId, 'awaiting_provider_city', temp);
+      return await sendMessage(
+        chatId,
+        '🦸‍♂️ Добро пожаловать, герой чистоты!\n\n🌆 Для начала работы укажите ваш город:\n\n(Город можно будет изменить позже в настройках)'
+      );
+    }
+    
+    await supabase.from('tg_user_profile').upsert({ user_id: userId, role: 'performer' });
+    await updateUserState(userId, 'start', temp);
+    return await sendMessage(chatId, '🦸‍♂️ Добро пожаловать, герой чистоты!\n\nГотов к новым подвигам по выносу мусора? 🚀\n\nВыбери действие:', getProviderMainMenuKeyboard());
+  }
 
   // Обработка фото от исполнителя
   if (message.photo && (userState.state === 'awaiting_photo_at_door' || userState.state === 'awaiting_photo_at_bin')) {

@@ -68,7 +68,8 @@ const supabase = createClient(
 function getMainRoleKeyboard() {
   return {
     keyboard: [
-      [{ text: '👤 Я заказчик' }, { text: '🔧 Я исполнитель' }]
+      [{ text: '👤 Я заказчик' }, { text: '🔧 Я исполнитель' }],
+      [{ text: '💬 Написать в поддержку' }]
     ],
     resize_keyboard: true,
     persistent: true
@@ -1576,6 +1577,14 @@ async function handleTextMessage(message: TelegramMessage) {
     return await sendMessage(chatId, '🦸‍♂️ Добро пожаловать, герой чистоты!\n\nГотов к новым подвигам по выносу мусора? 🚀\n\nВыбери действие:', getProviderMainMenuKeyboard());
   }
 
+  if (text === '💬 Написать в поддержку') {
+    await updateUserState(userId, 'awaiting_general_support_message', temp);
+    return await sendMessage(
+      chatId,
+      '💬 Напишите ваш вопрос, сообщение о проблеме или пожелание.\n\nМы постараемся ответить как можно скорее!'
+    );
+  }
+
   // Обработка фото от исполнителя
   if (message.photo && (userState.state === 'awaiting_photo_at_door' || userState.state === 'awaiting_photo_at_bin')) {
     const orderId = temp.current_order_id;
@@ -1791,6 +1800,30 @@ async function handleTextMessage(message: TelegramMessage) {
       await updateUserState(userId, 'start', {});
       await sendMessage(chatId, '✅ Ваше сообщение отправлено в поддержку. Мы свяжемся с вами в ближайшее время.', getMainMenuKeyboard());
       return;
+    }
+
+    case 'awaiting_general_support_message': {
+      const adminChatId = await getAdminChatId();
+      
+      if (adminChatId) {
+        const username = message.from.username ? `@${message.from.username}` : 'нет username';
+        const firstName = message.from.first_name || '';
+        const lastName = message.from.last_name || '';
+        const fullName = `${firstName} ${lastName}`.trim();
+        
+        const supportMessage = `🆘 <b>ОБРАЩЕНИЕ В ПОДДЕРЖКУ</b>\n\n` +
+          `👤 От: ${fullName} (${username})\n` +
+          `🆔 User ID: ${userId}\n\n` +
+          `💬 Сообщение:\n${text}`;
+        
+        await sendMessage(parseInt(adminChatId), supportMessage);
+      }
+      
+      await updateUserState(userId, 'start', {});
+      return await sendMessage(
+        chatId,
+        '✅ Ваше сообщение отправлено в поддержку!\n\nМы свяжемся с вами в ближайшее время.'
+      );
     }
 
     case 'awaiting_custom_time': // совместимость со старым сценарием

@@ -1798,7 +1798,7 @@ async function handleTextMessage(message: TelegramMessage) {
       }
 
       await updateUserState(userId, 'start', {});
-      await sendMessage(chatId, '✅ Ваше сообщение отправлено в поддержку. Мы свяжемся с вами в ближайшее время.', getMainMenuKeyboard());
+      await sendMessage(chatId, '✅ Ваше сообщение отправлено в поддержку. Мы свяжемся с вами в ближайшее время.');
       return;
     }
 
@@ -1820,10 +1820,8 @@ async function handleTextMessage(message: TelegramMessage) {
       }
       
       await updateUserState(userId, 'start', {});
-      return await sendMessage(
-        chatId,
-        '✅ Ваше сообщение отправлено в поддержку!\n\nМы свяжемся с вами в ближайшее время.'
-      );
+      await sendMessage(chatId, '✅ Ваше сообщение отправлено в поддержку!\n\nМы свяжемся с вами в ближайшее время.');
+      return;
     }
 
     case 'awaiting_custom_time': // совместимость со старым сценарием
